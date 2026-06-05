@@ -1,0 +1,18 @@
+{
+  "font_size": 24,
+  "opacity": 0.6,
+  "audio_device_id": null,
+  "audio_source": "system",
+  "source_language": "en",
+  "target_language": "zh",
+  "auto_correct": true,
+  "tts_enabled": false,
+  "tts_speed": 1.0,
+  "tts_interrupt": true,
+  "whisper_model": "small",
+  "window_position": [null, null],
+  "window_size": [800, 140],
+  "window_monitor": 0,
+  "hotwords_enabled": false,
+  "log_level": "INFO"
+}

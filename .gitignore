@@ -1,0 +1,45 @@
+# 模型文件 (体积过大，不纳入版本控制)
+models/whisper-small/
+models/whisper-tiny/
+models/models--Systran--faster-whisper-small/
+models/models--Systran--faster-whisper-tiny/
+models/.hf_cache/
+models/.locks/
+models/CACHEDIR.TAG
+
+# 但保留模型目录结构和自述文件
+!models/.gitkeep
+!models/*/README.md
+
+# 日志文件
+logs/
+
+# 导出文件
+exports/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# PyInstaller
+*.spec

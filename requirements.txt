@@ -1,0 +1,33 @@
+# AI 同声传译助手 — Python 依赖
+# 所有依赖均为开源许可（MIT / Apache 2.0）
+
+# ASR: 语音识别
+faster-whisper>=0.10.0
+
+# MT: 机器翻译
+transformers>=4.30.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+sacremoses>=0.0.53
+
+# 音频捕获
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# VAD: 语音活动检测
+silero-vad>=5.0
+
+# 音频文件处理
+pydub>=0.25.0
+
+# GUI: 图形界面
+PyQt6>=6.5.0
+
+# TTS: 语音合成 (v2.0)
+pyttsx3>=2.90.0
+
+# 打包分发
+pyinstaller>=5.13.0
+
+# 工具
+psutil>=5.9.0
