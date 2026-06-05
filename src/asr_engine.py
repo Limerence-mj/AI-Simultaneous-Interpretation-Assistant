@@ -120,9 +120,24 @@ class ASREngine:
         if self._model is None:
             raise RuntimeError("模型未加载，请先调用 load_model()")
 
+        # 空输入 / 极短输入保护
+        if not audio_data or len(audio_data) < 32:
+            return ASRResult(
+                segment_id=0, en_text="", confidence=0.0,
+                start_ms=0.0, end_ms=0.0,
+            )
+
         # PCM 16-bit → float32 numpy array
         audio_i16 = np.frombuffer(audio_data, dtype=np.int16)
         audio_f32 = audio_i16.astype(np.float32) / 32767.0
+
+        # 检测纯静音（RMS 能量极低），跳过 ASR 避免幻觉
+        rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
+        if rms < 0.0005:  # -66 dBFS 以下视为静音
+            return ASRResult(
+                segment_id=0, en_text="", confidence=0.0,
+                start_ms=0.0, end_ms=0.0,
+            )
 
         # 转写
         segments_iter, info = self._model.transcribe(
@@ -130,9 +145,11 @@ class ASREngine:
             language="en",
             beam_size=self.beam_size,
             vad_filter=False,          # 我们自己做了 VAD
-            vad_parameters=dict(        # 此参数仅在 vad_filter=True 时生效，保留以供参考
-                min_silence_duration_ms=500,
-            ),
+            condition_on_previous_text=False,  # 每句独立识别，避免跨句幻觉传播
+            temperature=0.0,           # 确定性输出
+            compression_ratio_threshold=2.4,  # 检测音频压缩失真（gzip 压缩比阈值）
+            log_prob_threshold=-1.0,   # 过滤低置信度输出
+            no_speech_threshold=0.6,   # 检测非语音段
         )
 
         # 合并所有片段文本
@@ -141,17 +158,21 @@ class ASREngine:
         seg_count = 0
 
         for seg in segments_iter:
-            texts.append(seg.text.strip())
-            total_log_prob += seg.avg_logprob
-            seg_count += 1
+            text = seg.text.strip()
+            if text:  # 过滤空文本
+                texts.append(text)
+                total_log_prob += seg.avg_logprob
+                seg_count += 1
 
         en_text = " ".join(texts)
         confidence = np.exp(total_log_prob / max(seg_count, 1))  # 对数概率→线性
+        # clamp 置信度到 [0, 1]
+        confidence = max(0.0, min(1.0, float(confidence)))
 
         return ASRResult(
             segment_id=0,               # 由调用者填充
             en_text=en_text,
-            confidence=float(confidence),
+            confidence=confidence,
             start_ms=0.0,               # 由调用者填充
             end_ms=0.0,
         )
