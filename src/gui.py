@@ -68,6 +68,10 @@ class SubtitleWindow(QWidget):
 
         # 上次版本号
         self._last_version = 0
+        self._last_text = ""
+
+        # ─── 修正动画状态 ───
+        self._flash_anim = None
 
         # ─── 右键菜单 ───
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -92,8 +96,39 @@ class SubtitleWindow(QWidget):
         if self.state.subtitle_version != self._last_version:
             self._last_version = self.state.subtitle_version
             text = self.state.current_subtitle
+
+            # 检测是否为修正（文本变化且非首次）
+            is_correction = (self._last_text and text and self._last_text != text)
+
             self._label.setText(text)
             self.subtitle_changed.emit(text)
+            self._last_text = text
+
+            if is_correction:
+                self._flash_correction()
+
+    def _flash_correction(self):
+        """修正闪烁动画：黄色渐变 1 秒"""
+        from PyQt6.QtCore import QPropertyAnimation, pyqtProperty
+        from PyQt6.QtGui import QColor
+
+        # 如果上一个动画还在运行，停止它
+        if self._flash_anim is not None:
+            self._flash_anim.stop()
+
+        # 通过临时修改 stylesheet 实现黄色闪烁
+        original_alpha = int(self._opacity * 255)
+
+        # 简化方案：直接切换背景色，然后用 QTimer 恢复
+        self.setStyleSheet(f"""
+            SubtitleWindow {{
+                background-color: rgba(255, 200, 0, 200);
+                border-radius: 12px;
+            }}
+        """)
+
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(800, self._update_background)
 
     # ─── 拖拽 ───
 
