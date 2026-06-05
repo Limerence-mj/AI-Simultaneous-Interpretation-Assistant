@@ -46,6 +46,163 @@ PROJECT_ROOT = Path(__file__).parent.parent
 logger = get_logger(__name__)
 
 
+# ─── 主窗口样式表 (暗色现代风格) ───
+_MAIN_STYLESHEET = """
+QMainWindow {
+    background-color: #1a1d23;
+}
+QWidget {
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #e0e0e0;
+}
+QGroupBox {
+    font-size: 14px;
+    font-weight: bold;
+    color: #8ab4f8;
+    background-color: #21252b;
+    border: 1px solid #333842;
+    border-radius: 10px;
+    margin-top: 14px;
+    padding: 16px 12px 12px 12px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 14px;
+    padding: 0 8px;
+    color: #8ab4f8;
+}
+QLabel {
+    color: #c8ccd4;
+    background: transparent;
+    border: none;
+}
+QComboBox {
+    background-color: #2c313a;
+    color: #e0e0e0;
+    border: 1px solid #3e4452;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-height: 18px;
+    font-size: 12px;
+}
+QComboBox:hover { border-color: #5a9eff; }
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox QAbstractItemView {
+    background-color: #2c313a;
+    color: #e0e0e0;
+    selection-background-color: #3a6fc5;
+    border: 1px solid #3e4452;
+    border-radius: 4px;
+}
+QSlider::groove:horizontal {
+    background: #2c313a;
+    height: 6px;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: #5a9eff;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+QSlider::handle:horizontal:hover {
+    background: #7ab4ff;
+}
+QCheckBox {
+    color: #c8ccd4;
+    spacing: 8px;
+    font-size: 12px;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #3e4452;
+    border-radius: 4px;
+    background-color: #2c313a;
+}
+QCheckBox::indicator:checked {
+    background-color: #5a9eff;
+    border-color: #5a9eff;
+}
+QPushButton {
+    background-color: #2c313a;
+    color: #e0e0e0;
+    border: 1px solid #3e4452;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background-color: #373d48;
+    border-color: #5a9eff;
+}
+QPushButton:pressed {
+    background-color: #1e2229;
+}
+QPushButton#startBtn {
+    background-color: #2d6a4f;
+    color: #ffffff;
+    border: 1px solid #40916c;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 10px 28px;
+    border-radius: 10px;
+}
+QPushButton#startBtn:hover {
+    background-color: #40916c;
+}
+QPushButton#startBtn:disabled {
+    background-color: #2c313a;
+    color: #666;
+    border-color: #333842;
+}
+QPushButton#stopBtn {
+    background-color: #6b3333;
+    color: #ffffff;
+    border: 1px solid #944545;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 10px 28px;
+    border-radius: 10px;
+}
+QPushButton#stopBtn:hover {
+    background-color: #8b3a3a;
+}
+QPushButton#stopBtn:disabled {
+    background-color: #2c313a;
+    color: #666;
+    border-color: #333842;
+}
+QTableWidget {
+    background-color: #21252b;
+    alternate-background-color: #282c34;
+    color: #c8ccd4;
+    gridline-color: #333842;
+    border: 1px solid #333842;
+    border-radius: 6px;
+    font-size: 12px;
+}
+QHeaderView::section {
+    background-color: #2c313a;
+    color: #8ab4f8;
+    padding: 6px;
+    border: none;
+    border-bottom: 2px solid #3e4452;
+    font-weight: bold;
+}
+QStatusBar {
+    background-color: #1a1d23;
+    color: #8ab4f8;
+}
+"""
+
+
 # ─── 字幕悬浮窗口 (保持原有设计，增加修正动画) ───
 
 class SubtitleWindow(QWidget):
@@ -177,6 +334,8 @@ class HistoryDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self):
+        self.setStyleSheet(_MAIN_STYLESHEET)
+        self.setMinimumSize(800, 500)
         layout = QVBoxLayout(self)
 
         self._table = QTableWidget()
@@ -283,7 +442,8 @@ class MainWindow(QMainWindow):
         self._start_time = 0.0
 
         self.setWindowTitle("🎙️ AI 同声传译助手")
-        self.setFixedSize(420, 480)
+        self.setFixedSize(440, 560)
+        self.setStyleSheet(_MAIN_STYLESHEET)
 
         self._setup_ui()
         self._load_config()
@@ -296,50 +456,59 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 14, 16, 14)
+
+        # ── 标题栏 ──
+        title = QLabel("🎙️  AI 同声传译助手")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #8ab4f8; "
+            "padding: 4px 0; background: transparent; border: none;"
+        )
+        layout.addWidget(title)
 
         # ── 音频源 ──
-        audio_group = QGroupBox("音频设置")
+        audio_group = QGroupBox("  🔊  音频设置")
         audio_layout = QGridLayout(audio_group)
+        audio_layout.setVerticalSpacing(8)
+        audio_layout.setHorizontalSpacing(10)
 
-        audio_layout.addWidget(QLabel("音频源:"), 0, 0)
+        audio_layout.addWidget(QLabel("音频源"), 0, 0)
         self._audio_source_combo = QComboBox()
         self._audio_source_combo.addItems(["系统音频 (Loopback)", "麦克风"])
         audio_layout.addWidget(self._audio_source_combo, 0, 1)
 
-        audio_layout.addWidget(QLabel("设备:"), 1, 0)
+        audio_layout.addWidget(QLabel("设备"), 1, 0)
         self._device_combo = QComboBox()
-        self._device_combo.setMinimumWidth(250)
+        self._device_combo.setMinimumWidth(200)
         audio_layout.addWidget(self._device_combo, 1, 1)
 
         self._refresh_dev_btn = QPushButton("⟳")
-        self._refresh_dev_btn.setFixedWidth(35)
+        self._refresh_dev_btn.setFixedSize(32, 32)
+        self._refresh_dev_btn.setToolTip("刷新设备列表")
         self._refresh_dev_btn.clicked.connect(self._refresh_devices)
         audio_layout.addWidget(self._refresh_dev_btn, 1, 2)
 
         layout.addWidget(audio_group)
 
         # ── 字幕设置 ──
-        subtitle_group = QGroupBox("字幕设置")
+        subtitle_group = QGroupBox("  📝  字幕设置")
         sub_layout = QGridLayout(subtitle_group)
+        sub_layout.setVerticalSpacing(8)
+        sub_layout.setHorizontalSpacing(10)
 
-        sub_layout.addWidget(QLabel("字体:"), 0, 0)
-        font_widget = QWidget()
-        font_h = QHBoxLayout(font_widget)
-        font_h.setContentsMargins(0, 0, 0, 0)
+        sub_layout.addWidget(QLabel("字体大小"), 0, 0)
         self._font_combo = QComboBox()
         self._font_combo.addItems(["小 (18px)", "中 (24px)", "大 (32px)"])
         self._font_combo.setCurrentIndex(1)
-        font_h.addWidget(self._font_combo)
-        sub_layout.addWidget(font_widget, 0, 1)
+        sub_layout.addWidget(self._font_combo, 0, 1)
 
-        sub_layout.addWidget(QLabel("透明度:"), 1, 0)
+        sub_layout.addWidget(QLabel("透明度"), 1, 0)
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setRange(20, 80)
         self._opacity_slider.setValue(60)
-        self._opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self._opacity_slider.setTickInterval(20)
         self._opacity_label = QLabel("60%")
+        self._opacity_label.setStyleSheet("font-weight: bold; min-width: 36px;")
         self._opacity_slider.valueChanged.connect(
             lambda v: self._opacity_label.setText(f"{v}%")
         )
@@ -349,74 +518,97 @@ class MainWindow(QMainWindow):
         layout.addWidget(subtitle_group)
 
         # ── 功能选项 ──
-        options_group = QGroupBox("功能选项")
+        options_group = QGroupBox("  ⚙️  功能选项")
         opt_layout = QVBoxLayout(options_group)
-        self._auto_correct_cb = QCheckBox("自动修正 (Reshoot + 上下文修正)")
+        opt_layout.setSpacing(8)
+
+        self._auto_correct_cb = QCheckBox("🔄 自动修正（断句合并 + 上下文消歧）")
         self._auto_correct_cb.setChecked(True)
         opt_layout.addWidget(self._auto_correct_cb)
 
-        tts_widget = QWidget()
-        tts_h = QHBoxLayout(tts_widget)
-        tts_h.setContentsMargins(0, 0, 0, 0)
-        self._tts_cb = QCheckBox("语音播报 (TTS)")
-        self._tts_cb.setChecked(False)
+        tts_row = QHBoxLayout()
+        self._tts_cb = QCheckBox("🔊 语音播报")
         self._tts_cb.toggled.connect(self._on_tts_toggled)
-        tts_h.addWidget(self._tts_cb)
-        tts_h.addWidget(QLabel("语速:"))
+        tts_row.addWidget(self._tts_cb)
+        tts_row.addSpacing(16)
+        tts_row.addWidget(QLabel("语速"))
         self._tts_speed_combo = QComboBox()
         self._tts_speed_combo.addItems(["0.8x", "1.0x", "1.2x", "1.5x"])
         self._tts_speed_combo.setCurrentIndex(1)
         self._tts_speed_combo.setEnabled(False)
-        tts_h.addWidget(self._tts_speed_combo)
-        tts_h.addStretch()
-        opt_layout.addWidget(tts_widget)
+        self._tts_speed_combo.setFixedWidth(80)
+        tts_row.addWidget(self._tts_speed_combo)
+        tts_row.addStretch()
+        opt_layout.addLayout(tts_row)
         layout.addWidget(options_group)
 
         # ── 控制按钮 ──
         btn_layout = QHBoxLayout()
-        self._start_btn = QPushButton("▶ 开始翻译")
-        self._start_btn.setStyleSheet(
-            "QPushButton { background-color: #4CAF50; color: white; font-size: 14px; "
-            "padding: 8px 20px; border-radius: 6px; }"
-            "QPushButton:hover { background-color: #45a049; }"
-        )
-        self._start_btn.clicked.connect(self._toggle_running)
-        btn_layout.addWidget(self._start_btn)
+        btn_layout.setSpacing(12)
 
-        self._stop_btn = QPushButton("⏹ 停止")
+        self._start_btn = QPushButton("▶  开始翻译")
+        self._start_btn.setObjectName("startBtn")
+        self._start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._start_btn.clicked.connect(self._toggle_running)
+        btn_layout.addWidget(self._start_btn, 2)
+
+        self._stop_btn = QPushButton("⏹  停止")
+        self._stop_btn.setObjectName("stopBtn")
         self._stop_btn.setEnabled(False)
+        self._stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stop_btn.clicked.connect(self._toggle_running)
-        btn_layout.addWidget(self._stop_btn)
+        btn_layout.addWidget(self._stop_btn, 1)
+
         layout.addLayout(btn_layout)
 
         # ── 状态栏 ──
-        status_group = QGroupBox("运行状态")
-        status_layout = QGridLayout(status_group)
-        self._status_indicator = QLabel("⚫ 未启动")
-        status_layout.addWidget(self._status_indicator, 0, 0)
+        status_group = QGroupBox("  📊  运行状态")
+        status_layout = QVBoxLayout(status_group)
+        status_layout.setSpacing(6)
 
-        self._stats_label = QLabel("已翻译 0 句 · 修正 0 次 · 延迟 --ms")
-        status_layout.addWidget(self._stats_label, 1, 0)
+        self._status_indicator = QLabel("⚫  未启动")
+        self._status_indicator.setStyleSheet(
+            "font-size: 14px; font-weight: bold; background: transparent; border: none;"
+        )
+        status_layout.addWidget(self._status_indicator)
+
+        self._stats_label = QLabel("就绪 · 等待开始翻译")
+        self._stats_label.setStyleSheet(
+            "font-size: 12px; color: #999; background: transparent; border: none;"
+        )
+        status_layout.addWidget(self._stats_label)
+
         layout.addWidget(status_group)
 
         # ── 辅助按钮 ──
         aux_layout = QHBoxLayout()
-        self._history_btn = QPushButton("📋 历史记录")
+        aux_layout.setSpacing(8)
+
+        self._history_btn = QPushButton("📋  历史记录")
+        self._history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._history_btn.clicked.connect(self._show_history)
         aux_layout.addWidget(self._history_btn)
 
-        self._export_btn = QPushButton("💾 导出")
+        self._export_btn = QPushButton("💾  导出字幕")
+        self._export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._export_btn.clicked.connect(self._export)
         aux_layout.addWidget(self._export_btn)
 
-        self._subtitle_btn = QPushButton("📺 显示/隐藏字幕")
+        self._subtitle_btn = QPushButton("📺  显示字幕")
+        self._subtitle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._subtitle_btn.clicked.connect(self._toggle_subtitle)
         aux_layout.addWidget(self._subtitle_btn)
+
         layout.addLayout(aux_layout)
 
-        # ── 底部 ──
-        layout.addStretch()
-        layout.addWidget(QLabel("v1.0 · 完全离线 · MIT"))
+        # ── 底部版本号 ──
+        version_label = QLabel("v1.0  ·  完全离线  ·  隐私安全")
+        version_label.setStyleSheet(
+            "font-size: 11px; color: #555; background: transparent; border: none; "
+            "padding-top: 2px;"
+        )
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(version_label)
 
     # ─── 设备枚举 ───
 
@@ -498,8 +690,10 @@ class MainWindow(QMainWindow):
             # 更新 UI
             self._start_btn.setEnabled(False)
             self._stop_btn.setEnabled(True)
-            self._status_indicator.setText("🟢 运行中")
-            self._status_indicator.setStyleSheet("color: green; font-weight: bold;")
+            self._status_indicator.setText("🟢  运行中")
+            self._status_indicator.setStyleSheet(
+                "font-size: 14px; font-weight: bold; color: #4ade80; background: transparent; border: none;"
+            )
 
             self.state.set_status(AppStatus.RUNNING)
 
@@ -541,8 +735,10 @@ class MainWindow(QMainWindow):
 
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._status_indicator.setText("⚫ 已停止")
-        self._status_indicator.setStyleSheet("")
+        self._status_indicator.setText("⚫  已停止")
+        self._status_indicator.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #999; background: transparent; border: none;"
+        )
 
         self.state.set_status(AppStatus.STOPPED)
         logger.info("翻译管道已停止")
