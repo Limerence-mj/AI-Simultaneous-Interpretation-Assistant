@@ -51,24 +51,23 @@ class AudioCapture:
         for i, dev in enumerate(sd_devices):
             hostapi_name = hostapis[dev['hostapi']]['name'] if dev['hostapi'] < len(hostapis) else ""
 
-            # 输出设备 (WASAPI) → 可用于 Loopback 捕获系统声音
+            # WASAPI 输出设备 → Loopback (仅当可用时)
             if dev['max_output_channels'] > 0 and 'WASAPI' in hostapi_name:
-                devices.append(AudioDevice(
-                    id=i,
-                    name=dev['name'],
-                    device_type="loopback",
-                    channels=dev['max_output_channels'],
-                    sample_rate=int(dev['default_samplerate']),
-                    hostapi_name=hostapi_name,
-                ))
+                # 快速验证 loopback 是否可用
+                if AudioCapture._test_loopback(i):
+                    devices.append(AudioDevice(
+                        id=i, name=dev['name'] + " (Loopback)",
+                        device_type="loopback",
+                        channels=dev['max_output_channels'],
+                        sample_rate=int(dev['default_samplerate']),
+                        hostapi_name=hostapi_name,
+                    ))
 
-            # 输入设备 (麦克风等)
-            if dev['max_input_channels'] > 0:
-                # 避免重复添加 (有些设备同时是 input+output)
+            # 输入设备 (麦克风等) — 只取 MME/DirectSound
+            if dev['max_input_channels'] > 0 and hostapi_name in ('MME', 'Windows DirectSound'):
                 if not any(d.id == i for d in devices):
                     devices.append(AudioDevice(
-                        id=i,
-                        name=dev['name'],
+                        id=i, name=dev['name'],
                         device_type="input",
                         channels=dev['max_input_channels'],
                         sample_rate=int(dev['default_samplerate']),
@@ -76,6 +75,21 @@ class AudioCapture:
                     ))
 
         return devices
+
+    @staticmethod
+    def _test_loopback(device_id: int) -> bool:
+        """测试 WASAPI loopback 设备是否可用"""
+        try:
+            dev = sd.query_devices(device_id)
+            ch = min(dev.get('max_output_channels', 2), 2)
+            stream = sd.InputStream(
+                device=device_id, channels=ch,
+                samplerate=16000, blocksize=1024, dtype='float32',
+            )
+            stream.close()
+            return True
+        except Exception:
+            return False
 
     def start(self, device_id: Optional[int], callback: Callable[[np.ndarray], None]) -> None:
         """
@@ -100,10 +114,25 @@ class AudioCapture:
                 audio = audio.flatten()
                 callback(audio)
 
+            # 确定设备实际支持的声道数
+            try:
+                dev_info = sd.query_devices(device_id)
+                # 对于 loopback 设备 (输出设备用作输入), 取其输出声道数
+                if dev_info['max_input_channels'] > 0:
+                    channels = dev_info['max_input_channels']
+                elif dev_info['max_output_channels'] > 0:
+                    channels = dev_info['max_output_channels']
+                else:
+                    channels = CHANNELS
+                # 限制为最多 2 声道（我们不需要更多）
+                channels = min(channels, 2)
+            except Exception:
+                channels = CHANNELS
+
             try:
                 self._stream = sd.InputStream(
                     device=device_id,
-                    channels=CHANNELS,
+                    channels=channels,
                     samplerate=SAMPLE_RATE,
                     blocksize=BLOCK_SIZE,
                     dtype=DTYPE,

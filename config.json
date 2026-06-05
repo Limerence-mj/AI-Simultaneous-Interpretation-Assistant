@@ -1,5 +1,5 @@
 {
-  "font_size": 24,
+  "font_size": 40,
   "opacity": 0.6,
   "audio_device_id": null,
   "audio_source": "system",
@@ -10,8 +10,14 @@
   "tts_speed": 1.0,
   "tts_interrupt": true,
   "whisper_model": "small",
-  "window_position": [null, null],
-  "window_size": [800, 140],
+  "window_position": [
+    null,
+    null
+  ],
+  "window_size": [
+    800,
+    140
+  ],
   "window_monitor": 0,
   "hotwords_enabled": false,
   "log_level": "INFO"
