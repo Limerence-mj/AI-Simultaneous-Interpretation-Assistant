@@ -53,76 +53,78 @@ QMainWindow {
 }
 QWidget {
     font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-    font-size: 13px;
+    font-size: 15px;
     color: #e0e0e0;
 }
 QGroupBox {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: bold;
     color: #8ab4f8;
     background-color: #21252b;
     border: 1px solid #333842;
-    border-radius: 10px;
-    margin-top: 14px;
-    padding: 16px 12px 12px 12px;
+    border-radius: 12px;
+    margin-top: 18px;
+    padding: 22px 16px 16px 16px;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
-    left: 14px;
-    padding: 0 8px;
+    left: 16px;
+    padding: 0 10px;
     color: #8ab4f8;
 }
 QLabel {
     color: #c8ccd4;
     background: transparent;
     border: none;
+    font-size: 15px;
 }
 QComboBox {
     background-color: #2c313a;
     color: #e0e0e0;
     border: 1px solid #3e4452;
-    border-radius: 6px;
-    padding: 6px 12px;
-    min-height: 18px;
-    font-size: 12px;
+    border-radius: 8px;
+    padding: 10px 16px;
+    min-height: 24px;
+    font-size: 14px;
 }
 QComboBox:hover { border-color: #5a9eff; }
 QComboBox::drop-down {
     border: none;
-    width: 24px;
+    width: 28px;
 }
 QComboBox QAbstractItemView {
     background-color: #2c313a;
     color: #e0e0e0;
     selection-background-color: #3a6fc5;
     border: 1px solid #3e4452;
-    border-radius: 4px;
+    border-radius: 6px;
+    font-size: 14px;
 }
 QSlider::groove:horizontal {
     background: #2c313a;
-    height: 6px;
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 4px;
 }
 QSlider::handle:horizontal {
     background: #5a9eff;
-    width: 16px;
-    height: 16px;
-    margin: -5px 0;
-    border-radius: 8px;
+    width: 20px;
+    height: 20px;
+    margin: -6px 0;
+    border-radius: 10px;
 }
 QSlider::handle:horizontal:hover {
     background: #7ab4ff;
 }
 QCheckBox {
     color: #c8ccd4;
-    spacing: 8px;
-    font-size: 12px;
+    spacing: 10px;
+    font-size: 15px;
 }
 QCheckBox::indicator {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border: 2px solid #3e4452;
-    border-radius: 4px;
+    border-radius: 5px;
     background-color: #2c313a;
 }
 QCheckBox::indicator:checked {
@@ -133,10 +135,11 @@ QPushButton {
     background-color: #2c313a;
     color: #e0e0e0;
     border: 1px solid #3e4452;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
+    border-radius: 10px;
+    padding: 12px 22px;
+    font-size: 15px;
     font-weight: 500;
+    min-height: 22px;
 }
 QPushButton:hover {
     background-color: #373d48;
@@ -149,10 +152,11 @@ QPushButton#startBtn {
     background-color: #2d6a4f;
     color: #ffffff;
     border: 1px solid #40916c;
-    font-size: 15px;
+    font-size: 18px;
     font-weight: bold;
-    padding: 10px 28px;
-    border-radius: 10px;
+    padding: 16px 40px;
+    border-radius: 12px;
+    min-height: 32px;
 }
 QPushButton#startBtn:hover {
     background-color: #40916c;
@@ -166,10 +170,11 @@ QPushButton#stopBtn {
     background-color: #6b3333;
     color: #ffffff;
     border: 1px solid #944545;
-    font-size: 15px;
+    font-size: 18px;
     font-weight: bold;
-    padding: 10px 28px;
-    border-radius: 10px;
+    padding: 16px 40px;
+    border-radius: 12px;
+    min-height: 32px;
 }
 QPushButton#stopBtn:hover {
     background-color: #8b3a3a;
@@ -185,16 +190,17 @@ QTableWidget {
     color: #c8ccd4;
     gridline-color: #333842;
     border: 1px solid #333842;
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: 8px;
+    font-size: 14px;
 }
 QHeaderView::section {
     background-color: #2c313a;
     color: #8ab4f8;
-    padding: 6px;
+    padding: 8px;
     border: none;
     border-bottom: 2px solid #3e4452;
     font-weight: bold;
+    font-size: 14px;
 }
 QStatusBar {
     background-color: #1a1d23;
@@ -214,7 +220,7 @@ class SubtitleWindow(QWidget):
         super().__init__()
         self.state = StateManager()
         self._opacity = 0.6
-        self._font_size = 24
+        self._font_size = 32
         self._last_version = 0
         self._last_text = ""
         self._dragging = False
@@ -233,9 +239,9 @@ class SubtitleWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         screen = QApplication.primaryScreen().availableGeometry()
-        w, h = 800, 120
+        w, h = 900, 160
         self.resize(w, h)
-        self.move((screen.width() - w) // 2, screen.height() - h - 60)
+        self.move((screen.width() - w) // 2, screen.height() - h - 80)
 
         self._label = QLabel("")
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -284,7 +290,7 @@ class SubtitleWindow(QWidget):
     def _show_menu(self, pos):
         menu = QMenu(self)
         font_menu = menu.addMenu("字体大小")
-        for size in [18, 24, 32]:
+        for size in [24, 32, 40]:
             a = QAction(f"{size}px", self)
             a.triggered.connect(lambda checked, s=size: self.set_font_size(s))
             font_menu.addAction(a)
@@ -442,7 +448,7 @@ class MainWindow(QMainWindow):
         self._start_time = 0.0
 
         self.setWindowTitle("🎙️ AI 同声传译助手")
-        self.setFixedSize(440, 560)
+        self.setFixedSize(520, 720)
         self.setStyleSheet(_MAIN_STYLESHEET)
 
         self._setup_ui()
@@ -456,22 +462,22 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setSpacing(10)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(14)
+        layout.setContentsMargins(20, 18, 20, 18)
 
         # ── 标题栏 ──
         title = QLabel("🎙️  AI 同声传译助手")
         title.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #8ab4f8; "
-            "padding: 4px 0; background: transparent; border: none;"
+            "font-size: 22px; font-weight: bold; color: #8ab4f8; "
+            "padding: 6px 0 8px 0; background: transparent; border: none;"
         )
         layout.addWidget(title)
 
         # ── 音频源 ──
         audio_group = QGroupBox("  🔊  音频设置")
         audio_layout = QGridLayout(audio_group)
-        audio_layout.setVerticalSpacing(8)
-        audio_layout.setHorizontalSpacing(10)
+        audio_layout.setVerticalSpacing(12)
+        audio_layout.setHorizontalSpacing(14)
 
         audio_layout.addWidget(QLabel("音频源"), 0, 0)
         self._audio_source_combo = QComboBox()
@@ -499,7 +505,7 @@ class MainWindow(QMainWindow):
 
         sub_layout.addWidget(QLabel("字体大小"), 0, 0)
         self._font_combo = QComboBox()
-        self._font_combo.addItems(["小 (18px)", "中 (24px)", "大 (32px)"])
+        self._font_combo.addItems(["小 (24px)", "中 (32px)", "大 (40px)"])
         self._font_combo.setCurrentIndex(1)
         sub_layout.addWidget(self._font_combo, 0, 1)
 
@@ -568,13 +574,13 @@ class MainWindow(QMainWindow):
 
         self._status_indicator = QLabel("⚫  未启动")
         self._status_indicator.setStyleSheet(
-            "font-size: 14px; font-weight: bold; background: transparent; border: none;"
+            "font-size: 16px; font-weight: bold; background: transparent; border: none;"
         )
         status_layout.addWidget(self._status_indicator)
 
         self._stats_label = QLabel("就绪 · 等待开始翻译")
         self._stats_label.setStyleSheet(
-            "font-size: 12px; color: #999; background: transparent; border: none;"
+            "font-size: 14px; color: #999; background: transparent; border: none;"
         )
         status_layout.addWidget(self._stats_label)
 
@@ -838,13 +844,13 @@ class MainWindow(QMainWindow):
 
     def _load_config(self):
         cfg = self.config_mgr.data
-        font_map = {18: 0, 24: 1, 32: 2}
+        font_map = {24: 0, 32: 1, 40: 2}
         self._font_combo.setCurrentIndex(font_map.get(cfg.get("font_size", 24), 1))
         self._opacity_slider.setValue(int(cfg.get("opacity", 0.6) * 100))
         self._auto_correct_cb.setChecked(cfg.get("auto_correct", True))
 
     def _save_config(self):
-        font_sizes = [18, 24, 32]
+        font_sizes = [24, 32, 40]
         self.config_mgr.update({
             "font_size": font_sizes[self._font_combo.currentIndex()],
             "opacity": self._opacity_slider.value() / 100.0,
