@@ -38,8 +38,11 @@ def main():
         logger.warning("翻译模型未找到，首次使用需下载")
     logger.info("模型检查完成")
 
-    # 启动 GUI
-    from PyQt6.QtWidgets import QApplication
+    # 启动 GUI (兼容 PyQt5/PyQt6)
+    try:
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        from PyQt5.QtWidgets import QApplication
     from src.gui import MainWindow, SubtitleWindow
 
     app = QApplication(sys.argv)

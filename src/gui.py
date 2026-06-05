@@ -1,7 +1,7 @@
 """
 AI 同声传译助手 — 完整 GUI
 主控制面板 + 悬浮字幕窗口 + 历史记录 + 系统托盘
-基于 PyQt6
+兼容 PyQt5 / PyQt6
 """
 import sys
 import time
@@ -9,18 +9,33 @@ import threading
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QComboBox, QCheckBox, QSlider, QDialog,
-    QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu,
-    QMessageBox, QHeaderView, QGroupBox, QGridLayout,
-)
-from PyQt6.QtCore import (
-    Qt, QTimer, QPoint, pyqtSignal, QThread,
-)
-from PyQt6.QtGui import (
-    QFont, QAction, QIcon, QColor, QMouseEvent,
-)
+
+# PyQt5/PyQt6 兼容导入
+_PYQT_VERSION = 0
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QLabel, QPushButton, QComboBox, QCheckBox, QSlider, QDialog,
+        QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu,
+        QMessageBox, QHeaderView, QGroupBox, QGridLayout,
+    )
+    from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal, QThread
+    from PyQt6.QtGui import QFont, QAction, QIcon, QColor, QMouseEvent
+    _PYQT_VERSION = 6
+    _HeaderResizeMode = QHeaderView.ResizeMode.Interactive
+    def _global_pos(event): return event.globalPosition().toPoint()
+except ImportError:
+    from PyQt5.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QLabel, QPushButton, QComboBox, QCheckBox, QSlider, QDialog,
+        QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu,
+        QMessageBox, QHeaderView, QGroupBox, QGridLayout, QAction,
+    )
+    from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QThread
+    from PyQt5.QtGui import QFont, QIcon, QColor, QMouseEvent
+    _PYQT_VERSION = 5
+    _HeaderResizeMode = QHeaderView.Interactive
+    def _global_pos(event): return event.globalPos()
 
 from src.state_manager import StateManager, AppStatus, TranslationRecord
 from src.config_manager import ConfigManager
@@ -139,7 +154,7 @@ class SubtitleWindow(QWidget):
     def mousePressEvent(self, e: QMouseEvent):
         if e.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
-            self._drag_start_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_start_pos = _global_pos(e) - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, e: QMouseEvent):
         if self._dragging:
@@ -168,7 +183,7 @@ class HistoryDialog(QDialog):
         self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(["时间", "英文原文", "首次译文", "最终译文", "修正"])
         self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.horizontalHeader().setSectionResizeMode(_HeaderResizeMode)
         self._table.setColumnWidth(0, 70)
         self._table.setColumnWidth(1, 200)
         self._table.setColumnWidth(2, 150)
