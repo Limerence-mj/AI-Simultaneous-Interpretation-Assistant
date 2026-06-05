@@ -339,9 +339,22 @@ class MainWindow(QMainWindow):
         self._auto_correct_cb = QCheckBox("自动修正 (Reshoot + 上下文修正)")
         self._auto_correct_cb.setChecked(True)
         opt_layout.addWidget(self._auto_correct_cb)
-        self._tts_cb = QCheckBox("语音播报 (TTS) — v2.0")
+
+        tts_widget = QWidget()
+        tts_h = QHBoxLayout(tts_widget)
+        tts_h.setContentsMargins(0, 0, 0, 0)
+        self._tts_cb = QCheckBox("语音播报 (TTS)")
         self._tts_cb.setChecked(False)
-        opt_layout.addWidget(self._tts_cb)
+        self._tts_cb.toggled.connect(self._on_tts_toggled)
+        tts_h.addWidget(self._tts_cb)
+        tts_h.addWidget(QLabel("语速:"))
+        self._tts_speed_combo = QComboBox()
+        self._tts_speed_combo.addItems(["0.8x", "1.0x", "1.2x", "1.5x"])
+        self._tts_speed_combo.setCurrentIndex(1)
+        self._tts_speed_combo.setEnabled(False)
+        tts_h.addWidget(self._tts_speed_combo)
+        tts_h.addStretch()
+        opt_layout.addWidget(tts_widget)
         layout.addWidget(options_group)
 
         # ── 控制按钮 ──
@@ -427,11 +440,35 @@ class MainWindow(QMainWindow):
         """启动翻译管道"""
         from src.pipeline import Pipeline
         from src.audio_capture import AudioCapture
+        from src.tts_engine import TTSEngine
 
         try:
-            # 初始化管道
+            # 初始化管道 + 翻译协调器
             self._pipeline = Pipeline(model_size="small", device="cpu")
             self._pipeline.start()
+
+            from src.translator_coordinator import TranslationCoordinator
+            self._coordinator = TranslationCoordinator()
+            self._coordinator.initialize()
+            # 复用 pipeline 的 ASR 模型
+            self._coordinator.state.set_status(AppStatus.RUNNING)
+
+            # 初始化 TTS（如果勾选）
+            if self._tts_cb.isChecked():
+                speeds = [0.8, 1.0, 1.2, 1.5]
+                spd = speeds[self._tts_speed_combo.currentIndex()]
+                self._tts_engine = TTSEngine(speed=spd)
+                if self._tts_engine.is_available:
+                    self._tts_engine.start()
+                    self._coordinator.set_tts(self._tts_engine)
+                    logger.info(f"TTS 已启动 (speed={spd}x)")
+                else:
+                    self._tts_cb.setChecked(False)
+                    self._tts_cb.setEnabled(False)
+                    self._tts_cb.setText("语音播报 (不可用)")
+            else:
+                self._tts_engine = None
+
             logger.info("Pipeline 模型加载完成")
 
             # 音频捕获
@@ -462,6 +499,13 @@ class MainWindow(QMainWindow):
             logger.error(f"启动失败: {e}")
             QMessageBox.critical(self, "启动失败", str(e))
 
+    def _on_tts_toggled(self, checked):
+        """TTS 开关切换"""
+        self._tts_speed_combo.setEnabled(checked)
+        if not checked and hasattr(self, '_tts_engine') and self._tts_engine:
+            self._tts_engine.stop()
+            self._tts_engine = None
+
     def _stop_pipeline(self):
         """停止翻译管道"""
         self._running = False
@@ -470,6 +514,11 @@ class MainWindow(QMainWindow):
             self._audio_capture.stop()
         if hasattr(self, '_stats_timer'):
             self._stats_timer.stop()
+
+        # 停止 TTS
+        if hasattr(self, '_tts_engine') and self._tts_engine:
+            self._tts_engine.stop()
+            self._tts_engine = None
 
         # Flush 剩余结果
         if self._pipeline:
@@ -484,11 +533,13 @@ class MainWindow(QMainWindow):
         logger.info("翻译管道已停止")
 
     def _on_audio_chunk(self, audio_chunk: np.ndarray):
-        """音频回调 → Pipeline"""
+        """音频回调 → VAD → ASR → MT → TTS"""
         if not self._running or self._pipeline is None:
             return
         try:
-            result = self._pipeline.feed(audio_chunk)
+            asr_result = self._pipeline.feed(audio_chunk)
+            if asr_result is not None and hasattr(self, '_coordinator'):
+                self._coordinator.process(asr_result)
         except Exception as e:
             logger.error(f"处理音频块失败: {e}")
 

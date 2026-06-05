@@ -50,6 +50,9 @@ class TranslationCoordinator:
         # 上下文窗口：最近 N+1 句 (英文, 中文首次译文)
         self._context_window: deque = deque(maxlen=CONTEXT_SIZE + 1)
 
+        # TTS 引擎 (可选)
+        self._tts = None
+
         # Reshoot 追踪
         self._last_asr_result: Optional[ASRResult] = None
         self._last_first_translation: Optional[str] = None
@@ -59,6 +62,10 @@ class TranslationCoordinator:
         self._sentence_count: int = 0
         self._reshoot_count: int = 0
         self._context_correction_count: int = 0
+
+    def set_tts(self, tts_engine):
+        """设置 TTS 引擎（可选）"""
+        self._tts = tts_engine
 
     def initialize(self) -> float:
         """加载 MT 模型，返回耗时"""
@@ -166,6 +173,10 @@ class TranslationCoordinator:
 
         # 更新当前字幕
         self.state.set_subtitle(final_zh)
+
+        # TTS 语音播报（异步）
+        if self._tts and self._tts.is_available and final_zh:
+            self._tts.speak(final_zh)
 
         # 统计
         latency_ms = (time.time() - t0) * 1000
