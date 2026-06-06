@@ -748,7 +748,7 @@ class MainWindow(QMainWindow):
 
         tts_row = QHBoxLayout()
         self._tts_cb = QCheckBox("启用语音播报")
-        self._tts_cb.setChecked(True)  # 默认开启（Piper 高质量语音）
+        self._tts_cb.setChecked(True)  # 默认开启
         self._tts_cb.toggled.connect(self._on_tts_toggled)
         tts_row.addWidget(self._tts_cb)
         tts_row.addSpacing(16)
@@ -888,14 +888,10 @@ class MainWindow(QMainWindow):
             # TTS
             if use_tts:
                 try:
-                    from src.tts_engine_piper import PiperTTSEngine
-                    self._tts_engine = PiperTTSEngine(voice=tts_voice, speed=tts_speed)
-                    if self._tts_engine.is_available:
-                        self._tts_engine.start()
-                        self._tts_engine.speak("Groq 在线翻译已就绪")
-                        logger.info("TTS 已就绪 (PiperTTSEngine)")
-                    else:
-                        self._tts_engine = None
+                    from src.tts_engine_edge import EdgeTTSEngine
+                    self._tts_engine = EdgeTTSEngine(voice=tts_voice, speed=tts_speed)
+                    self._tts_engine.start()
+                    logger.info("TTS 已就绪 (Edge-TTS)")
                 except Exception as e:
                     logger.warning(f"TTS 加载失败: {e}")
                     self._tts_engine = None
@@ -955,39 +951,31 @@ class MainWindow(QMainWindow):
         self._tts_engine = self._init_thread.tts_engine
         self._init_thread = None
 
-        # 加载 TTS（主线程，避免 QThread 兼容问题）
+        # 加载 TTS（主线程，Edge-TTS 在线高质量语音）
         if self._tts_cb.isChecked():
             logger.info("正在加载语音播报引擎...")
             speeds = [0.8, 1.0, 1.2, 1.5]
             tts_speed = speeds[self._tts_speed_combo.currentIndex()]
-            tts_voice = self._tts_voice_combo.currentData() or "晓雅 (女声)"
-            tts_ok = False
+            tts_voice = self._tts_voice_combo.currentData() or "晓晓 (女声)"
             try:
-                from src.tts_engine_piper import PiperTTSEngine
-                self._tts_engine = PiperTTSEngine(voice=tts_voice, speed=tts_speed)
-                if self._tts_engine.is_available:
-                    self._tts_engine.start()
-                    self._coordinator.set_tts(self._tts_engine)
-                    tts_ok = True
-                    logger.info(f"TTS 已就绪 (引擎=PiperTTSEngine, 音色={tts_voice})")
+                from src.tts_engine_edge import EdgeTTSEngine
+                self._tts_engine = EdgeTTSEngine(voice=tts_voice, speed=tts_speed)
+                self._tts_engine.start()
+                self._coordinator.set_tts(self._tts_engine)
+                logger.info(f"TTS 已就绪 (Edge-TTS, {tts_voice})")
             except Exception as e:
-                logger.warning(f"Piper TTS 加载失败: {e}")
-
-            if not tts_ok:
+                logger.warning(f"Edge-TTS 加载失败: {e}, 降级 pyttsx3")
                 try:
                     from src.tts_engine import TTSEngine
                     self._tts_engine = TTSEngine(speed=tts_speed)
                     if self._tts_engine.is_available:
                         self._tts_engine.start()
                         self._coordinator.set_tts(self._tts_engine)
-                        tts_ok = True
-                        logger.info("TTS 已就绪 (引擎=pyttsx3 降级)")
-                except Exception as e:
-                    logger.warning(f"pyttsx3 TTS 也失败: {e}")
-
-            if not tts_ok:
-                logger.warning("TTS 不可用，纯字幕模式")
-                self._tts_engine = None
+                        logger.info("TTS 已就绪 (pyttsx3 降级)")
+                    else:
+                        self._tts_engine = None
+                except Exception:
+                    self._tts_engine = None
         else:
             logger.info("未启用 TTS 语音播报")
 
@@ -1048,16 +1036,9 @@ class MainWindow(QMainWindow):
     def _refresh_tts_voices(self):
         """刷新可用的 TTS 音色列表"""
         self._tts_voice_combo.clear()
-        try:
-            from src.tts_engine_piper import VOICE_OPTIONS, DEFAULT_VOICE_DIR
-            for name, info in VOICE_OPTIONS.items():
-                model_path = DEFAULT_VOICE_DIR / f"{info['file']}.onnx"
-                if model_path.exists():
-                    self._tts_voice_combo.addItem(f"🎵 {name}", name)
-            if self._tts_voice_combo.count() == 0:
-                self._tts_voice_combo.addItem("(未下载语音模型)", None)
-        except Exception:
-            self._tts_voice_combo.addItem("(Piper 不可用)", None)
+        from src.tts_engine_edge import VOICE_OPTIONS
+        for name in VOICE_OPTIONS:
+            self._tts_voice_combo.addItem(f"🎵 {name}", name)
 
     def _on_tts_toggled(self, checked):
         """TTS 开关切换"""

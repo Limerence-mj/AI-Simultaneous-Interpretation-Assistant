@@ -154,26 +154,16 @@ class VADProcessor:
         return result_segment
 
     def _force_end_segment(self, end_sample: int) -> Optional[SpeechSegment]:
-        """强制结束当前语音段，重建 VADIterator 并清理旧缓冲避免重复"""
+        """强制切段：输出已累积语音，更新起点继续等待自然停顿"""
         if self._current_speech_start is None:
             return None
         segment = self._create_segment(self._current_speech_start, end_sample)
         if segment is None:
             return None
-
-        # 清理已处理的音频缓冲，避免新 VADIterator 重复检测
         self._trim_before_sample(end_sample)
-
-        # 重建 VADIterator（旧迭代器在强制切断后无法正确检测新语音段）
-        self._vad_iter = VADIterator(
-            self._model,
-            threshold=VAD_THRESHOLD,
-            sampling_rate=self.sample_rate,
-            min_silence_duration_ms=MIN_SILENCE_DURATION_MS,
-            speech_pad_ms=SPEECH_PAD_MS,
-        )
-        self._triggered = False
-        self._current_speech_start = None
+        # 关键：保持 _triggered=True，更新起点为切点位置
+        # 这样 VADIterator 后续的 'end' 事件不会被丢弃
+        self._current_speech_start = end_sample
         return segment
 
     def _trim_before_sample(self, sample_pos: int):

@@ -22,9 +22,10 @@ class Pipeline:
     ):
         self.on_result = on_result
         self.vad = VADProcessor(
-            min_silence_ms=200,
+            threshold=0.5,
+            min_silence_ms=150,     # 150ms 停顿即切句，响应更快
             min_speech_ms=150,
-            max_speech_ms=30000,   # 仅作极端安全网，由自然停顿切句
+            max_speech_ms=5000,    # 仅极端安全网，由自然停顿切句
         )
         self.asr = ASREngine(
             model_size=model_size,

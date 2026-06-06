@@ -1,5 +1,5 @@
 {
-  "font_size": 40,
+  "font_size": 32,
   "opacity": 0.6,
   "audio_device_id": null,
   "audio_source": "system",
@@ -21,6 +21,6 @@
   "window_monitor": 0,
   "hotwords_enabled": false,
   "log_level": "INFO",
-  "engine_mode": "Groq API",
+  "engine_mode": "本地离线",
   "groq_api_key": ""
 }

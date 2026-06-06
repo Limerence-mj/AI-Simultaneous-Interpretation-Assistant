@@ -91,13 +91,19 @@ class TranslationCoordinator:
 
         en_text = asr_result.en_text
 
-        # 跳过空/错误文本
+        # 跳过空/错误/低质量文本
         if not en_text or en_text.startswith("[ASR_ERROR"):
             self._last_asr_result = asr_result
-            return MTResult(
-                segment_id=asr_result.segment_id,
-                zh_text="", en_text=en_text,
-            )
+            return MTResult(segment_id=asr_result.segment_id, zh_text="", en_text=en_text)
+
+        conf = getattr(asr_result, 'confidence', 1.0)
+        # 低置信度 = 可能是噪音/掌声/笑声
+        if conf < 0.3:
+            return MTResult(segment_id=asr_result.segment_id, zh_text="", en_text=en_text)
+        # 太短且不像完整单词 = 噪音片段
+        stripped = en_text.strip().strip('.!?,;:')
+        if len(stripped) < 3:
+            return MTResult(segment_id=asr_result.segment_id, zh_text="", en_text=en_text)
 
         correction_type = ""
         prev_translation: Optional[str] = None
