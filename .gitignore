@@ -43,3 +43,7 @@ Desktop.ini
 
 # PyInstaller
 *.spec
+g2pW/
+*.docx
+convert_to_docx.py
+test_media/
