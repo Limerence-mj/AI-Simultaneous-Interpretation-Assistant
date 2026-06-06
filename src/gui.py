@@ -7,6 +7,7 @@ import sys
 import time
 import threading
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -18,24 +19,30 @@ try:
         QLabel, QPushButton, QComboBox, QCheckBox, QSlider, QDialog,
         QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu,
         QMessageBox, QHeaderView, QGroupBox, QGridLayout, QTabWidget,
+        QScrollArea,
     )
     from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal, QThread
     from PyQt6.QtGui import QFont, QAction, QIcon, QColor, QMouseEvent
     _PYQT_VERSION = 6
     _HeaderResizeMode = QHeaderView.ResizeMode.Interactive
     def _global_pos(event): return event.globalPosition().toPoint()
+    _WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
+    _WA_ShowWithoutActivating = Qt.WidgetAttribute.WA_ShowWithoutActivating
 except ImportError:
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QComboBox, QCheckBox, QSlider, QDialog,
         QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu,
         QMessageBox, QHeaderView, QGroupBox, QGridLayout, QTabWidget, QAction,
+        QScrollArea,
     )
     from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QThread
     from PyQt5.QtGui import QFont, QIcon, QColor, QMouseEvent
     _PYQT_VERSION = 5
     _HeaderResizeMode = QHeaderView.Interactive
     def _global_pos(event): return event.globalPos()
+    _WA_TranslucentBackground = Qt.WA_TranslucentBackground
+    _WA_ShowWithoutActivating = Qt.WA_ShowWithoutActivating
 
 from src.state_manager import StateManager, AppStatus, TranslationRecord
 from src.config_manager import ConfigManager
@@ -215,6 +222,8 @@ class SubtitleWindow(QWidget):
     """半透明、置顶、可拖拽、无边框字幕窗口"""
 
     subtitle_changed = pyqtSignal(str)
+    # 默认提示文字
+    DEFAULT_TEXT = "🎙️ AI 同声传译助手 — 就绪"
 
     def __init__(self):
         super().__init__()
@@ -225,6 +234,7 @@ class SubtitleWindow(QWidget):
         self._last_text = ""
         self._dragging = False
         self._drag_start_pos = QPoint()
+        self._flash_timer_id = None  # 修正闪烁定时器 ID
 
         self._setup_ui()
         self._setup_timer()
@@ -236,25 +246,30 @@ class SubtitleWindow(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setAttribute(_WA_ShowWithoutActivating, True)
+        # 允许透明背景（去除默认黑底）
+        self.setAttribute(_WA_TranslucentBackground, True)
 
         screen = QApplication.primaryScreen().availableGeometry()
         w, h = 960, 200
         self.resize(w, h)
         self.move((screen.width() - w) // 2, screen.height() - h - 100)
 
-        self._label = QLabel("")
+        # 标签使用独立样式，不继承窗口背景
+        self._label = QLabel(self.DEFAULT_TEXT)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setWordWrap(True)
         self._label.setFont(QFont("Microsoft YaHei", self._font_size))
-        self._label.setStyleSheet("color: #FFFFFF; padding: 16px 20px;")
+        self._label.setStyleSheet(
+            "color: #FFFFFF; padding: 16px 20px; background: transparent;"
+        )
 
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 10, 20, 10)
         layout.addWidget(self._label)
         self.setLayout(layout)
 
-        self._update_background()
+        self._apply_background(self._opacity)
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
@@ -262,13 +277,19 @@ class SubtitleWindow(QWidget):
     def _setup_timer(self):
         self._timer = QTimer()
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(100)
+        self._timer.start(33)   # 30fps 刷新
 
     def _refresh(self):
+        # 检查是否有新字幕
         if self.state.subtitle_version != self._last_version:
             self._last_version = self.state.subtitle_version
             text = self.state.current_subtitle
-            is_correction = bool(self._last_text and text and self._last_text != text)
+            # 如果 state 中没有字幕（空字符串），保持默认文字
+            if not text:
+                text = self.DEFAULT_TEXT
+            is_correction = bool(self._last_text and text
+                                and self._last_text != text
+                                and self._last_text != self.DEFAULT_TEXT)
             self._label.setText(text)
             self.subtitle_changed.emit(text)
             self._last_text = text
@@ -276,25 +297,51 @@ class SubtitleWindow(QWidget):
                 self._flash_correction()
 
     def _flash_correction(self):
+        """修正闪烁效果：短暂变为金色背景"""
+        self._apply_background(self._opacity, flash=True)
+        # 800ms 后恢复
+        if self._flash_timer_id is not None:
+            self.killTimer(self._flash_timer_id)
+        self._flash_timer_id = self.startTimer(800)
+
+    def timerEvent(self, event):
+        """定时器事件：用于修正闪烁恢复"""
+        if self._flash_timer_id is not None and event.timerId() == self._flash_timer_id:
+            self.killTimer(self._flash_timer_id)
+            self._flash_timer_id = None
+            self._apply_background(self._opacity)
+        else:
+            super().timerEvent(event)
+
+    def _apply_background(self, opacity: float, flash: bool = False):
+        """应用背景样式（支持透明度渐变）"""
+        alpha = int(opacity * 255)
+        if flash:
+            color = f"rgba(255, 200, 0, {min(alpha + 40, 255)})"
+        else:
+            color = f"rgba(0, 0, 0, {alpha})"
         self.setStyleSheet(
-            "SubtitleWindow { background-color: rgba(255, 200, 0, 200); border-radius: 12px; }"
+            f"SubtitleWindow {{ background-color: {color}; border-radius: 12px; }}"
         )
-        QTimer.singleShot(800, self._update_background)
 
     def _update_background(self):
-        alpha = int(self._opacity * 255)
-        self.setStyleSheet(
-            f"SubtitleWindow {{ background-color: rgba(0, 0, 0, {alpha}); border-radius: 12px; }}"
-        )
+        """兼容旧接口"""
+        self._apply_background(self._opacity)
 
     def _show_menu(self, pos):
         menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: #2c313a; color: #e0e0e0; border: 1px solid #3e4452; }
+            QMenu::item:selected { background-color: #3a6fc5; }
+        """)
         font_menu = menu.addMenu("字体大小")
+        font_menu.setStyleSheet(menu.styleSheet())
         for size in [24, 32, 40]:
             a = QAction(f"{size}px", self)
             a.triggered.connect(lambda checked, s=size: self.set_font_size(s))
             font_menu.addAction(a)
         op_menu = menu.addMenu("透明度")
+        op_menu.setStyleSheet(menu.styleSheet())
         for op in [0.2, 0.4, 0.6, 0.8]:
             a = QAction(f"{int(op*100)}%", self)
             a.triggered.connect(lambda checked, o=op: self.set_opacity(o))
@@ -309,10 +356,12 @@ class SubtitleWindow(QWidget):
 
     def set_opacity(self, opacity: float):
         self._opacity = max(0.1, min(1.0, opacity))
-        self._update_background()
+        self._apply_background(self._opacity)
 
     def set_subtitle_direct(self, text: str):
         self._label.setText(text)
+
+    # ─── 鼠标拖拽（兼容 PyQt5/PyQt6） ───
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -321,7 +370,8 @@ class SubtitleWindow(QWidget):
 
     def mouseMoveEvent(self, e: QMouseEvent):
         if self._dragging:
-            self.move(e.globalPosition().toPoint() - self._drag_start_pos)
+            # 使用兼容的 _global_pos 而不是直接调用 PyQt6 的 globalPosition()
+            self.move(_global_pos(e) - self._drag_start_pos)
 
     def mouseReleaseEvent(self, e: QMouseEvent):
         self._dragging = False
@@ -429,6 +479,50 @@ class HistoryDialog(QDialog):
         QApplication.clipboard().setText("\n".join(lines))
 
 
+# ─── 后台初始化线程 ───
+
+class PipelineInitWorker(QThread):
+    """后台线程：加载模型和初始化管道，避免阻塞 UI"""
+    progress_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(bool, str)
+
+    def __init__(self, use_tts: bool = False, tts_voice: str = "晓雅 (女声)",
+                 tts_speed: float = 1.0,
+                 on_subtitle: Callable = None, on_tts: Callable = None):
+        super().__init__()
+        self._use_tts = use_tts
+        self._tts_voice = tts_voice
+        self._tts_speed = tts_speed
+        self._on_subtitle_cb = on_subtitle
+        self._on_tts_cb = on_tts
+        self.pipeline = None
+        self.coordinator = None
+        self.tts_engine = None
+
+    def run(self):
+        try:
+            from src.pipeline import Pipeline
+            from src.translator_coordinator import TranslationCoordinator
+
+            self.progress_signal.emit("正在加载语音识别模型 (Whisper)...")
+            self.pipeline = Pipeline(
+                model_size="tiny", device="cpu",
+                on_result=self._on_subtitle_cb,
+            )
+            self.pipeline.start()
+
+            self.progress_signal.emit("正在加载翻译模型 (opus-mt)...")
+            self.coordinator = TranslationCoordinator()
+            self.coordinator.initialize()
+
+            # TTS 加载移到主线程（避免 QThread 中的兼容问题）
+            self.finished_signal.emit(True, "")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.finished_signal.emit(False, str(e))
+
+
 # ─── 主控制面板 ───
 
 class MainWindow(QMainWindow):
@@ -442,14 +536,16 @@ class MainWindow(QMainWindow):
         self.config_mgr = ConfigManager()
         self.config_mgr.load()
 
-        self._pipeline = None       # Pipeline 实例
+        self._pipeline = None       # StreamingPipeline 实例
         self._audio_capture = None  # AudioCapture 实例
+        self._tts_engine = None     # TTS 引擎
         self._running = False
         self._start_time = 0.0
+        self._init_thread = None    # 后台初始化线程
 
         self.setWindowTitle("🎙️ AI 同声传译助手")
-        self.setMinimumSize(560, 620)
-        self.resize(580, 660)
+        self.setMinimumSize(600, 750)
+        self.resize(620, 850)
         self.setStyleSheet(_MAIN_STYLESHEET)
 
         self._setup_ui()
@@ -507,6 +603,7 @@ class MainWindow(QMainWindow):
         self._audio_source_combo = QComboBox()
         self._audio_source_combo.addItems(["系统音频", "麦克风"])
         self._audio_source_combo.setMinimumWidth(160)
+        self._audio_source_combo.activated.connect(self._refresh_devices)
         audio_row.addWidget(self._audio_source_combo)
 
         self._device_combo = QComboBox()
@@ -561,11 +658,52 @@ class MainWindow(QMainWindow):
         tab1_layout.addStretch()
         tabs.addTab(tab1, "控制")
 
-        # ─── Tab 2: 设置 ───
+        # ─── Tab 2: 设置（可滚动） ───
+        scroll2 = QScrollArea()
+        scroll2.setWidgetResizable(True)
+        scroll2.setStyleSheet("QScrollArea { border: none; background: #1a1d23; }")
         tab2 = QWidget()
+        tab2.setStyleSheet("background: #1a1d23;")
         tab2_layout = QVBoxLayout(tab2)
         tab2_layout.setSpacing(16)
         tab2_layout.setContentsMargins(24, 24, 24, 24)
+
+        # ── 翻译引擎模式 ──
+        engine_label = QLabel("翻译引擎")
+        engine_label.setStyleSheet("font-size: 14px; color: #888;")
+        tab2_layout.addWidget(engine_label)
+        engine_row = QHBoxLayout()
+        self._engine_mode_combo = QComboBox()
+        self._engine_mode_combo.addItems(["本地离线", "Groq API"])
+        self._engine_mode_combo.currentTextChanged.connect(self._on_engine_mode_changed)
+        engine_row.addWidget(self._engine_mode_combo, 1)
+        tab2_layout.addLayout(engine_row)
+
+        # API Key
+        api_label = QLabel("Groq API Key")
+        api_label.setStyleSheet("font-size: 14px; color: #888;")
+        tab2_layout.addWidget(api_label)
+        api_row = QHBoxLayout()
+        from PyQt5.QtWidgets import QLineEdit
+        try:
+            from PyQt6.QtWidgets import QLineEdit
+        except ImportError:
+            pass
+        self._api_key_input = QLineEdit()
+        self._api_key_input.setPlaceholderText("输入 Groq API Key (gsk_... )")
+        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_input.setStyleSheet(
+            "background-color: #2c313a; color: #e0e0e0; border: 1px solid #3e4452;"
+            "border-radius: 8px; padding: 10px 16px; font-size: 14px;"
+        )
+        self._api_key_input.setEnabled(False)
+        api_row.addWidget(self._api_key_input, 1)
+        tab2_layout.addLayout(api_row)
+
+        sep0 = QLabel()
+        sep0.setFixedHeight(1)
+        sep0.setStyleSheet("background: #333842;")
+        tab2_layout.addWidget(sep0)
 
         # 字幕字体
         font_label = QLabel("字幕字体大小")
@@ -603,23 +741,37 @@ class MainWindow(QMainWindow):
         self._auto_correct_cb.setChecked(True)
         tab2_layout.addWidget(self._auto_correct_cb)
 
-        # TTS
+        # TTS 语音播报
+        tts_title = QLabel("语音播报 (TTS)")
+        tts_title.setStyleSheet("font-size: 14px; color: #888;")
+        tab2_layout.addWidget(tts_title)
+
         tts_row = QHBoxLayout()
-        self._tts_cb = QCheckBox("语音播报")
+        self._tts_cb = QCheckBox("启用语音播报")
+        self._tts_cb.setChecked(True)  # 默认开启（Piper 高质量语音）
         self._tts_cb.toggled.connect(self._on_tts_toggled)
         tts_row.addWidget(self._tts_cb)
-        tts_row.addSpacing(20)
+        tts_row.addSpacing(16)
+        self._tts_voice_combo = QComboBox()
+        self._tts_voice_combo.setEnabled(False)
+        self._tts_voice_combo.setMinimumWidth(140)
+        tts_row.addWidget(self._tts_voice_combo)
+        tts_row.addSpacing(10)
         self._tts_speed_combo = QComboBox()
         self._tts_speed_combo.addItems(["0.8x", "1.0x", "1.2x", "1.5x"])
         self._tts_speed_combo.setCurrentIndex(1)
         self._tts_speed_combo.setEnabled(False)
-        self._tts_speed_combo.setFixedWidth(90)
+        self._tts_speed_combo.setFixedWidth(80)
         tts_row.addWidget(self._tts_speed_combo)
         tts_row.addStretch()
         tab2_layout.addLayout(tts_row)
 
+        # 填充 TTS 音色列表
+        self._refresh_tts_voices()
+
         tab2_layout.addStretch()
-        tabs.addTab(tab2, "设置")
+        scroll2.setWidget(tab2)
+        tabs.addTab(scroll2, "设置")
 
         # ─── 辅助按钮（标签页下方） ───
         aux_row = QHBoxLayout()
@@ -662,7 +814,12 @@ class MainWindow(QMainWindow):
                 filtered = devices  # fallback
 
             for d in filtered:
-                self._device_combo.addItem(f"[{d.device_type}] {d.name}", d.id)
+                # 用中文标签区分设备类型
+                if d.device_type == "loopback":
+                    label = f"🔊 系统音频 — {d.name}"
+                else:
+                    label = f"🎤 麦克风 — {d.name}"
+                self._device_combo.addItem(label, d.id)
 
             logger.info(f"设备列表刷新: {len(filtered)} 个 {target_type} 设备")
         except Exception as e:
@@ -673,78 +830,240 @@ class MainWindow(QMainWindow):
     def _toggle_running(self):
         if self._running:
             self._stop_pipeline()
-        else:
+        elif self._init_thread is None:
             self._start_pipeline()
 
     def _start_pipeline(self):
         """启动翻译管道"""
-        from src.pipeline import Pipeline
         from src.audio_capture import AudioCapture
-        from src.tts_engine import TTSEngine
+
+        use_api = (self._engine_mode_combo.currentText() == "Groq API")
+        api_key = self._api_key_input.text().strip() if use_api else ""
+
+        if use_api and not api_key:
+            QMessageBox.warning(self, "缺少 API Key", "请先在设置页输入 Groq API Key")
+            return
+
+        use_tts = self._tts_cb.isChecked()
+        speeds = [0.8, 1.0, 1.2, 1.5]
+        tts_speed = speeds[self._tts_speed_combo.currentIndex()]
+        tts_voice = self._tts_voice_combo.currentData() or "晓雅 (女声)"
+
+        self._start_btn.setEnabled(False)
+        self._stop_btn.setEnabled(False)
+
+        if use_api:
+            # Groq API 模式：无需加载模型，直接启动
+            self._status_indicator.setText("🟡  启动 Groq API...")
+            self._status_indicator.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #facc15; background: transparent; padding-top: 8px;"
+            )
+            self._start_api_pipeline(api_key, use_tts, tts_voice, tts_speed)
+        else:
+            # 本地离线模式：后台加载模型
+            self._status_indicator.setText("🟡  正在加载模型...")
+            self._status_indicator.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #facc15; background: transparent; padding-top: 8px;"
+            )
+            self._init_thread = PipelineInitWorker(
+                use_tts=use_tts, tts_voice=tts_voice, tts_speed=tts_speed,
+                on_subtitle=self._on_subtitle_update,
+            )
+            self._init_thread.progress_signal.connect(self._on_init_progress)
+            self._init_thread.finished_signal.connect(self._on_init_finished)
+            self._init_thread.start()
+
+    def _start_api_pipeline(self, api_key, use_tts, tts_voice, tts_speed):
+        """直接启动 Groq API 管线（无需后台加载）"""
+        from src.pipeline_api import APIPipeline
+        from src.audio_capture import AudioCapture
 
         try:
-            # 初始化管道 + 翻译协调器
-            self._pipeline = Pipeline(model_size="small", device="cpu")
+            self._pipeline = APIPipeline(
+                api_key=api_key,
+                on_subtitle=self._on_subtitle_update,
+            )
             self._pipeline.start()
 
-            from src.translator_coordinator import TranslationCoordinator
-            self._coordinator = TranslationCoordinator()
-            self._coordinator.initialize()
-            # 复用 pipeline 的 ASR 模型
-            self._coordinator.state.set_status(AppStatus.RUNNING)
-
-            # 初始化 TTS（如果勾选）
-            if self._tts_cb.isChecked():
-                speeds = [0.8, 1.0, 1.2, 1.5]
-                spd = speeds[self._tts_speed_combo.currentIndex()]
-                self._tts_engine = TTSEngine(speed=spd)
-                if self._tts_engine.is_available:
-                    self._tts_engine.start()
-                    self._coordinator.set_tts(self._tts_engine)
-                    logger.info(f"TTS 已启动 (speed={spd}x)")
-                else:
-                    self._tts_cb.setChecked(False)
-                    self._tts_cb.setEnabled(False)
-                    self._tts_cb.setText("语音播报 (不可用)")
+            # TTS
+            if use_tts:
+                try:
+                    from src.tts_engine_piper import PiperTTSEngine
+                    self._tts_engine = PiperTTSEngine(voice=tts_voice, speed=tts_speed)
+                    if self._tts_engine.is_available:
+                        self._tts_engine.start()
+                        self._tts_engine.speak("Groq 在线翻译已就绪")
+                        logger.info("TTS 已就绪 (PiperTTSEngine)")
+                    else:
+                        self._tts_engine = None
+                except Exception as e:
+                    logger.warning(f"TTS 加载失败: {e}")
+                    self._tts_engine = None
             else:
                 self._tts_engine = None
-
-            logger.info("Pipeline 模型加载完成")
 
             # 音频捕获
             self._audio_capture = AudioCapture()
             device_id = self._device_combo.currentData()
+            if device_id is None:
+                devices = AudioCapture.list_devices()
+                loopback_devs = [d for d in devices if d.device_type == "loopback"]
+                device_id = loopback_devs[0].id if loopback_devs else devices[0].id if devices else -1
             self._audio_capture.start(device_id, self._on_audio_chunk)
-            logger.info(f"音频捕获已启动 (device={device_id})")
 
             self._running = True
             self._start_time = time.time()
-
-            # 更新 UI
             self._start_btn.setEnabled(False)
             self._stop_btn.setEnabled(True)
-            self._status_indicator.setText("🟢  运行中")
+            self._status_indicator.setText("🟢  运行中 (Groq API)")
             self._status_indicator.setStyleSheet(
-                "font-size: 14px; font-weight: bold; color: #4ade80; background: transparent; border: none;"
+                "font-size: 18px; font-weight: bold; color: #4ade80; background: transparent; padding-top: 8px;"
             )
-
             self.state.set_status(AppStatus.RUNNING)
 
-            # 定时刷新统计
             self._stats_timer = QTimer()
             self._stats_timer.timeout.connect(self._update_stats)
             self._stats_timer.start(1000)
 
-            logger.info("翻译管道已启动")
-
+            logger.info("Groq API 翻译管道已启动")
         except Exception as e:
-            logger.error(f"启动失败: {e}")
+            logger.error(f"API 启动失败: {e}")
             QMessageBox.critical(self, "启动失败", str(e))
+            self._start_btn.setEnabled(True)
+
+    def _on_init_progress(self, msg: str):
+        """后台线程进度回调"""
+        logger.info(msg)
+        self._status_indicator.setText(f"🟡  {msg}")
+
+    def _on_init_finished(self, success: bool, error_msg: str):
+        """后台线程完成回调（在主线程执行）"""
+        if not success:
+            self._init_thread = None
+            self._start_btn.setEnabled(True)
+            self._stop_btn.setEnabled(False)
+            self._status_indicator.setText("❌  启动失败")
+            self._status_indicator.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #f87171; background: transparent; padding-top: 8px;"
+            )
+            QMessageBox.critical(self, "启动失败", error_msg)
+            return
+
+        # 获取加载好的实例
+        self._pipeline = self._init_thread.pipeline
+        self._coordinator = self._init_thread.coordinator
+        self._tts_engine = self._init_thread.tts_engine
+        self._init_thread = None
+
+        # 加载 TTS（主线程，避免 QThread 兼容问题）
+        if self._tts_cb.isChecked():
+            logger.info("正在加载语音播报引擎...")
+            speeds = [0.8, 1.0, 1.2, 1.5]
+            tts_speed = speeds[self._tts_speed_combo.currentIndex()]
+            tts_voice = self._tts_voice_combo.currentData() or "晓雅 (女声)"
+            tts_ok = False
+            try:
+                from src.tts_engine_piper import PiperTTSEngine
+                self._tts_engine = PiperTTSEngine(voice=tts_voice, speed=tts_speed)
+                if self._tts_engine.is_available:
+                    self._tts_engine.start()
+                    self._coordinator.set_tts(self._tts_engine)
+                    tts_ok = True
+                    logger.info(f"TTS 已就绪 (引擎=PiperTTSEngine, 音色={tts_voice})")
+            except Exception as e:
+                logger.warning(f"Piper TTS 加载失败: {e}")
+
+            if not tts_ok:
+                try:
+                    from src.tts_engine import TTSEngine
+                    self._tts_engine = TTSEngine(speed=tts_speed)
+                    if self._tts_engine.is_available:
+                        self._tts_engine.start()
+                        self._coordinator.set_tts(self._tts_engine)
+                        tts_ok = True
+                        logger.info("TTS 已就绪 (引擎=pyttsx3 降级)")
+                except Exception as e:
+                    logger.warning(f"pyttsx3 TTS 也失败: {e}")
+
+            if not tts_ok:
+                logger.warning("TTS 不可用，纯字幕模式")
+                self._tts_engine = None
+        else:
+            logger.info("未启用 TTS 语音播报")
+
+        # 发出就绪提示音
+        if self._tts_engine and self._tts_engine.is_available:
+            self._tts_engine.speak("翻译助手已就绪")
+
+        # 启动音频捕获
+        from src.audio_capture import AudioCapture
+        try:
+            self._audio_capture = AudioCapture()
+            device_id = self._device_combo.currentData()
+            if device_id is None:
+                # 没有设备选中时，尝试默认设备
+                devices = AudioCapture.list_devices()
+                loopback_devices = [d for d in devices if d.device_type == "loopback"]
+                if loopback_devices:
+                    device_id = loopback_devices[0].id
+                elif devices:
+                    device_id = devices[0].id
+                else:
+                    raise RuntimeError("未检测到可用音频设备")
+
+            self._audio_capture.start(device_id, self._on_audio_chunk)
+            logger.info(f"音频捕获已启动 (device={device_id})")
+        except Exception as e:
+            logger.error(f"音频启动失败: {e}")
+            self._pipeline = None
+            self._tts_engine = None
+            self._start_btn.setEnabled(True)
+            self._stop_btn.setEnabled(False)
+            self._status_indicator.setText("❌  音频设备错误")
+            self._status_indicator.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #f87171; background: transparent; padding-top: 8px;"
+            )
+            QMessageBox.critical(self, "音频设备错误", str(e))
+            return
+
+        self._running = True
+        self._start_time = time.time()
+        self.state.set_status(AppStatus.RUNNING)
+
+        # 更新 UI
+        self._start_btn.setEnabled(False)
+        self._stop_btn.setEnabled(True)
+        self._status_indicator.setText("🟢  运行中")
+        self._status_indicator.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #4ade80; background: transparent; padding-top: 8px;"
+        )
+
+        # 定时刷新统计
+        self._stats_timer = QTimer()
+        self._stats_timer.timeout.connect(self._update_stats)
+        self._stats_timer.start(1000)
+
+        logger.info("翻译管道已启动")
+
+    def _refresh_tts_voices(self):
+        """刷新可用的 TTS 音色列表"""
+        self._tts_voice_combo.clear()
+        try:
+            from src.tts_engine_piper import VOICE_OPTIONS, DEFAULT_VOICE_DIR
+            for name, info in VOICE_OPTIONS.items():
+                model_path = DEFAULT_VOICE_DIR / f"{info['file']}.onnx"
+                if model_path.exists():
+                    self._tts_voice_combo.addItem(f"🎵 {name}", name)
+            if self._tts_voice_combo.count() == 0:
+                self._tts_voice_combo.addItem("(未下载语音模型)", None)
+        except Exception:
+            self._tts_voice_combo.addItem("(Piper 不可用)", None)
 
     def _on_tts_toggled(self, checked):
         """TTS 开关切换"""
+        self._tts_voice_combo.setEnabled(checked)
         self._tts_speed_combo.setEnabled(checked)
-        if not checked and hasattr(self, '_tts_engine') and self._tts_engine:
+        if not checked and self._tts_engine:
             self._tts_engine.stop()
             self._tts_engine = None
 
@@ -752,40 +1071,84 @@ class MainWindow(QMainWindow):
         """停止翻译管道"""
         self._running = False
 
-        if self._audio_capture:
-            self._audio_capture.stop()
         if hasattr(self, '_stats_timer'):
-            self._stats_timer.stop()
+            try:
+                self._stats_timer.stop()
+            except Exception:
+                pass
 
-        # 停止 TTS
-        if hasattr(self, '_tts_engine') and self._tts_engine:
-            self._tts_engine.stop()
+        if self._audio_capture:
+            try:
+                self._audio_capture.stop()
+            except Exception:
+                pass
+            self._audio_capture = None
+
+        if self._tts_engine:
+            try:
+                self._tts_engine.stop()
+            except Exception:
+                pass
             self._tts_engine = None
 
-        # Flush 剩余结果
         if self._pipeline:
-            self._pipeline.finish()
+            try:
+                self._pipeline.finish()
+            except Exception:
+                pass
+            self._pipeline = None
+
+        self._coordinator = None
 
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._status_indicator.setText("⚫  已停止")
         self._status_indicator.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #999; background: transparent; border: none;"
+            "font-size: 18px; font-weight: bold; color: #999; background: transparent; padding-top: 8px;"
         )
 
         self.state.set_status(AppStatus.STOPPED)
         logger.info("翻译管道已停止")
 
     def _on_audio_chunk(self, audio_chunk: np.ndarray):
-        """音频回调 → VAD → ASR → MT → TTS"""
+        """音频回调 → VAD → ASR 队列 → 翻译"""
         if not self._running or self._pipeline is None:
             return
         try:
-            asr_result = self._pipeline.feed(audio_chunk)
-            if asr_result is not None and hasattr(self, '_coordinator'):
-                self._coordinator.process(asr_result)
+            # 周期性能量日志
+            if not hasattr(self, '_chunk_count'):
+                self._chunk_count = 0
+                self._last_report = time.time()
+            self._chunk_count += 1
+            if time.time() - self._last_report >= 2.0:
+                energy = float(np.sqrt(np.mean(audio_chunk ** 2)))
+                logger.info(f"[音频] {self._chunk_count}块, 能量={energy:.4f}")
+                self._chunk_count = 0
+                self._last_report = time.time()
+
+            self._pipeline.feed(audio_chunk)
         except Exception as e:
-            logger.error(f"处理音频块失败: {e}")
+            logger.error(f"音频处理失败: {e}")
+
+    def _on_subtitle_update(self, result):
+        """字幕回调（兼容 API 模式字符串 和 本地模式 ASRResult）"""
+        if not self._running:
+            return
+        # API 模式：直接收到中文字符串
+        if isinstance(result, str):
+            self.state.set_subtitle(result)
+            if self._tts_engine and self._tts_engine.is_available and len(result) > 2:
+                self._tts_engine.speak(result)
+            return
+        # 本地模式：收到 ASRResult
+        if self._coordinator is None:
+            return
+        try:
+            logger.info(f"[翻译] EN: {result.en_text[:80]}")
+            mt_result = self._coordinator.process(result)
+            logger.info(f"[翻译] ZH: {mt_result.zh_text[:80]}")
+        except Exception as e:
+            logger.error(f"翻译处理失败: {e}")
 
     def _update_stats(self):
         """更新统计显示"""
@@ -848,7 +1211,7 @@ class MainWindow(QMainWindow):
         tray_menu.addAction("显示主面板", self.show)
         tray_menu.addAction("显示/隐藏字幕", self._toggle_subtitle)
         tray_menu.addSeparator()
-        tray_menu.addAction("退出", QApplication.quit)
+        tray_menu.addAction("退出", self._quit_app)
         self._tray.setContextMenu(tray_menu)
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
@@ -858,16 +1221,38 @@ class MainWindow(QMainWindow):
             self.show()
             self.raise_()
 
-    def closeEvent(self, event):
-        """关闭时保存配置并最小化到托盘"""
+    def _quit_app(self):
+        """彻底退出程序"""
+        # 停止翻译管道
+        if self._running:
+            self._stop_pipeline()
+        # 保存配置
         self._save_config()
-        event.ignore()
-        self.hide()
-        self._tray.showMessage(
-            "AI 同声传译助手", "已最小化到系统托盘", QSystemTrayIcon.MessageIcon.Information, 2000
-        )
+        # 关闭字幕窗口
+        if hasattr(self, '_subtitle_window') and self._subtitle_window:
+            try:
+                self._subtitle_window.close()
+            except Exception:
+                pass
+            self._subtitle_window = None
+        # 隐藏托盘图标
+        if hasattr(self, '_tray'):
+            try:
+                self._tray.hide()
+            except Exception:
+                pass
+        QApplication.quit()
+
+    def closeEvent(self, event):
+        """关闭主窗口 → 彻底退出程序"""
+        self._quit_app()
 
     # ─── 配置 ───
+
+    def _on_engine_mode_changed(self, mode: str):
+        """引擎模式切换"""
+        use_api = (mode == "Groq API")
+        self._api_key_input.setEnabled(use_api)
 
     def _load_config(self):
         cfg = self.config_mgr.data
@@ -875,6 +1260,14 @@ class MainWindow(QMainWindow):
         self._font_combo.setCurrentIndex(font_map.get(cfg.get("font_size", 24), 1))
         self._opacity_slider.setValue(int(cfg.get("opacity", 0.6) * 100))
         self._auto_correct_cb.setChecked(cfg.get("auto_correct", True))
+        # API 配置
+        engine_mode = cfg.get("engine_mode", "本地离线")
+        idx = self._engine_mode_combo.findText(engine_mode)
+        if idx >= 0:
+            self._engine_mode_combo.setCurrentIndex(idx)
+        api_key = cfg.get("groq_api_key", "")
+        if api_key:
+            self._api_key_input.setText(api_key)
 
     def _save_config(self):
         font_sizes = [24, 32, 40]
@@ -883,5 +1276,7 @@ class MainWindow(QMainWindow):
             "opacity": self._opacity_slider.value() / 100.0,
             "auto_correct": self._auto_correct_cb.isChecked(),
             "audio_source": "system" if "系统" in self._audio_source_combo.currentText() else "microphone",
+            "engine_mode": self._engine_mode_combo.currentText(),
+            "groq_api_key": self._api_key_input.text(),
         })
         self.config_mgr.save()

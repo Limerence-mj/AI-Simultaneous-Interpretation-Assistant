@@ -1,14 +1,18 @@
 """
 AI 同声传译助手 — 应用入口
 完全离线运行，所有文件存放于项目根目录
-用法: python src/main.py
+用法: python src/main.py  或  python -m src.main
 """
 import os
 import sys
 from pathlib import Path
 
+# ─── 确保项目根目录在 sys.path 中（兼容直接运行和模块运行） ───
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # ─── 环境初始化：强制所有缓存指向项目目录 ───
-PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 os.environ["HF_HOME"] = str(MODELS_DIR / ".hf_cache")
 os.environ["TRANSFORMERS_CACHE"] = str(MODELS_DIR)
