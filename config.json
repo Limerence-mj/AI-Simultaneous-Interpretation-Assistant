@@ -20,5 +20,7 @@
   ],
   "window_monitor": 0,
   "hotwords_enabled": false,
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "engine_mode": "Groq API",
+  "groq_api_key": ""
 }
