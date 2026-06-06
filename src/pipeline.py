@@ -1,9 +1,11 @@
 """
-VAD → ASR 管道骨架
-连接语音活动检测与语音识别，提供文件处理和流式处理的统一接口
+VAD → ASR 管道 v3
+faster-whisper + 短 VAD 窗口 + 单 ASR 线程
 """
 import time
-from typing import List, Optional
+import threading
+import queue
+from typing import List, Optional, Callable
 
 import numpy as np
 
@@ -12,144 +14,95 @@ from src.asr_engine import ASREngine, ASRResult
 
 
 class Pipeline:
-    """
-    VAD → ASR 处理管道
-
-    用法 — 处理音频文件:
-        pipeline = Pipeline()
-        results = pipeline.process_file("audio.wav")
-        for r in results:
-            print(f"[{r.start_ms:.0f}-{r.end_ms:.0f}ms] {r.en_text}")
-
-    用法 — 流式处理:
-        pipeline = Pipeline()
-        pipeline.start()
-        for chunk in audio_stream:
-            pipeline.feed(chunk)
-        results = pipeline.finish()
-    """
-
     def __init__(
         self,
         model_size: str = "small",
         device: str = "cpu",
+        on_result: Optional[Callable[[ASRResult], None]] = None,
     ):
-        # 初始化 VAD
+        self.on_result = on_result
         self.vad = VADProcessor(
-            min_silence_ms=500,
-            min_speech_ms=300,
-            max_speech_ms=15000,
+            min_silence_ms=200,
+            min_speech_ms=150,
+            max_speech_ms=30000,   # 仅作极端安全网，由自然停顿切句
         )
-
-        # 初始化 ASR（延迟加载）
         self.asr = ASREngine(
             model_size=model_size,
             device=device,
             compute_type="int8" if device == "cpu" else "float16",
         )
-
-        # 流式处理状态
         self._results: List[ASRResult] = []
-        self._block_size = 1024  # 与 AudioCapture.BLOCK_SIZE 一致
-
-    # ─── 文件处理 ───
-
-    def process_file(self, audio_array: np.ndarray, sample_rate: int = 16000) -> List[ASRResult]:
-        """
-        处理完整音频文件（numpy float32 数组）
-
-        Args:
-            audio_array: 1D float32 数组, 16kHz
-            sample_rate: 采样率
-
-        Returns:
-            ASRResult 列表，按时间排序
-        """
-        results: List[ASRResult] = []
-
-        # 确保模型已加载
-        if not self.asr._model:
-            load_time = self.asr.load_model()
-            print(f"[Pipeline] ASR 模型加载: {load_time:.1f}s ({self.asr.model_size})")
-
-        # 模拟流式输入
-        t_total_start = time.time()
-        total_samples = len(audio_array)
-
-        for offset in range(0, total_samples, self._block_size):
-            chunk = audio_array[offset:offset + self._block_size]
-            if len(chunk) < self._block_size:
-                pad = np.zeros(self._block_size - len(chunk), dtype=np.float32)
-                chunk = np.concatenate([chunk, pad])
-
-            # VAD 切句
-            segment = self.vad.process(chunk)
-            if segment is not None:
-                # ASR 识别
-                asr_result = self.asr.transcribe(segment.audio_data)
-                asr_result.segment_id = segment.id
-                asr_result.start_ms = segment.start_ms
-                asr_result.end_ms = segment.end_ms
-                results.append(asr_result)
-
-        # Flush 末尾未完成段
-        flushed = self.vad.flush()
-        if flushed is not None:
-            asr_result = self.asr.transcribe(flushed.audio_data)
-            asr_result.segment_id = flushed.id
-            asr_result.start_ms = flushed.start_ms
-            asr_result.end_ms = flushed.end_ms
-            results.append(asr_result)
-
-        elapsed = time.time() - t_total_start
-        audio_duration = total_samples / sample_rate
-        print(f"[Pipeline] 处理 {audio_duration:.1f}s 音频, "
-              f"耗时 {elapsed:.1f}s, 产出 {len(results)} 句")
-
-        return results
-
-    # ─── 流式处理 ───
+        self._running = False
+        self._asr_queue = queue.Queue(maxsize=10)  # 足够容纳 VAD 产出
+        self._asr_worker: Optional[threading.Thread] = None
 
     def start(self):
-        """启动流式管道（加载 ASR 模型）"""
         if not self.asr._model:
             t0 = time.time()
             self.asr.load_model()
-            print(f"[Pipeline] 模型就绪 ({time.time()-t0:.1f}s)")
+            print(f"[Pipeline] ASR 就绪 ({time.time()-t0:.1f}s, {self.asr.model_size})")
+        self._running = True
+        self._asr_worker = threading.Thread(target=self._asr_loop, name="ASR-Worker", daemon=True)
+        self._asr_worker.start()
 
-    def feed(self, audio_chunk: np.ndarray) -> Optional[ASRResult]:
-        """
-        送入一块音频数据，如有完整句子则返回 ASRResult
-
-        Args:
-            audio_chunk: 1D float32, 16kHz
-
-        Returns:
-            ASRResult 或 None
-        """
+    def feed(self, audio_chunk: np.ndarray) -> None:
+        if not self._running:
+            return
         segment = self.vad.process(audio_chunk)
         if segment is None:
-            return None
+            return
+        try:
+            self._asr_queue.put_nowait(segment)
+        except queue.Full:
+            try:
+                self._asr_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._asr_queue.put_nowait(segment)
+            except queue.Full:
+                pass
 
-        result = self.asr.transcribe(segment.audio_data)
-        result.segment_id = segment.id
-        result.start_ms = segment.start_ms
-        result.end_ms = segment.end_ms
-        self._results.append(result)
-        return result
+    def _asr_loop(self):
+        while self._running or not self._asr_queue.empty():
+            try:
+                segment = self._asr_queue.get(timeout=0.3)
+            except queue.Empty:
+                continue
+            try:
+                result = self.asr.transcribe(segment.audio_data)
+                result.segment_id = segment.id
+                result.start_ms = segment.start_ms
+                result.end_ms = segment.end_ms
+                self._results.append(result)
+                if self.on_result:
+                    self.on_result(result)
+            except Exception as e:
+                print(f"[Pipeline] ASR 失败: {e}")
 
     def finish(self) -> List[ASRResult]:
-        """结束流式处理，flush 剩余段并返回全部结果"""
+        self._running = False
+        if self._asr_worker and self._asr_worker.is_alive():
+            self._asr_worker.join(timeout=30.0)  # 等待所有段处理完
         flushed = self.vad.flush()
         if flushed is not None:
-            result = self.asr.transcribe(flushed.audio_data)
-            result.segment_id = flushed.id
-            result.start_ms = flushed.start_ms
-            result.end_ms = flushed.end_ms
-            self._results.append(result)
+            try:
+                result = self.asr.transcribe(flushed.audio_data)
+                result.segment_id = flushed.id
+                result.start_ms = flushed.start_ms
+                result.end_ms = flushed.end_ms
+                self._results.append(result)
+                if self.on_result:
+                    self.on_result(result)
+            except Exception as e:
+                print(f"[Pipeline] Flush 失败: {e}")
         return self._results
 
     def reset(self):
-        """重置管道状态"""
         self.vad.reset()
         self._results.clear()
+        while not self._asr_queue.empty():
+            try:
+                self._asr_queue.get_nowait()
+            except queue.Empty:
+                break

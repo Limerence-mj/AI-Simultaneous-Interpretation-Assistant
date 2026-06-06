@@ -84,7 +84,8 @@ class TranslationCoordinator:
         """
         处理单个 ASR 结果，返回最终翻译结果
 
-        流程: Reshoot检测 → 首次翻译 → 上下文修正 → 保存记录
+        流程: Reshoot检测 → 首次翻译 → 字幕 → TTS播报
+        注：上下文修正暂时禁用，优先保证翻译准确性和连续性
         """
         t0 = time.time()
 
@@ -108,54 +109,26 @@ class TranslationCoordinator:
             correction_type = "reshoot"
             self._reshoot_count += 1
 
-        # ─── 阶段2: 首次翻译 (无上下文) ───
-        first_zh = self.mt.translate(en_text)
-        final_zh = first_zh
+        # ─── 阶段2: 直接翻译 ───
+        zh_text = self.mt.translate(en_text)
 
-        # ─── 阶段3: 上下文回顾修正 ───
-        if not did_reshoot and len(self._context_window) >= 1:
-            en_context = [en for en, _ in list(self._context_window)[-CONTEXT_SIZE:]]
-            context_zh_raw = self.mt.translate(en_text, context=en_context)
-
-            # opus-mt 会将上下文也翻译出来。尝试提取仅当前句的译文
-            context_zh = self._extract_current_translation(context_zh_raw, en_context)
-
-            # 若上下文输出与单独翻译原文几乎相同 → 模型仅翻译了上文，不触发修正
-            if context_zh and len(context_zh) > 0:
-                # 检查是否与首次翻译有意义不同
-                dist = _edit_distance(first_zh, context_zh)
-                # 同时检查上下文输出不应完全是上文内容的重复
-                is_context_repeat = any(
-                    _edit_distance(context_zh, self.mt.translate(ctx_en)) < 3
-                    for ctx_en in en_context
-                )
-                if dist > EDIT_DISTANCE_THRESHOLD and not is_context_repeat:
-                    final_zh = context_zh
-                    correction_type = "context"
-                    prev_translation = first_zh
-                    self._context_correction_count += 1
-
-        # ─── 阶段4: 更新上下文窗口 ───
+        # ─── 阶段3: 更新上下文窗口 ───
         if not did_reshoot:
-            self._context_window.append((en_text, first_zh))
+            self._context_window.append((en_text, zh_text))
         else:
-            # Reshoot: 替换上一句
-            merged_en_text = merged_en if did_reshoot else en_text
             if len(self._context_window) > 0:
-                # 替换最后一条的英文
                 prev_en, prev_zh = self._context_window[-1]
-                self._context_window[-1] = (merged_en_text, prev_zh)
+                self._context_window[-1] = (en_text, prev_zh)
             else:
-                self._context_window.append((merged_en_text, first_zh))
+                self._context_window.append((en_text, zh_text))
 
-        # ─── 阶段5: 创建/更新翻译记录 ───
+        # ─── 阶段4: 创建/更新翻译记录 ───
         is_corrected = correction_type != ""
 
         if did_reshoot:
-            # 更新上一条历史记录（重译替换）
             self._update_last_record(
                 en_text=en_text,
-                final_translation=final_zh,
+                final_translation=zh_text,
                 correction_count=1,
             )
         else:
@@ -164,19 +137,19 @@ class TranslationCoordinator:
                 start_time=asr_result.start_ms / 1000.0,
                 end_time=asr_result.end_ms / 1000.0,
                 en_text=en_text,
-                first_translation=first_zh,
-                final_translation=final_zh,
+                first_translation=zh_text,
+                final_translation=zh_text,
                 is_corrected=is_corrected,
                 correction_count=1 if is_corrected else 0,
             )
             self.state.add_record(record)
 
         # 更新当前字幕
-        self.state.set_subtitle(final_zh)
+        self.state.set_subtitle(zh_text)
 
-        # TTS 语音播报（异步）
-        if self._tts and self._tts.is_available and final_zh:
-            self._tts.speak(final_zh)
+        # TTS 语音播报
+        if self._tts and self._tts.is_available and zh_text:
+            self._tts.speak(zh_text)
 
         # 统计
         latency_ms = (time.time() - t0) * 1000
@@ -186,11 +159,11 @@ class TranslationCoordinator:
 
         # 保存状态用于下次 Reshoot 检测
         self._last_asr_result = asr_result
-        self._last_first_translation = first_zh
+        self._last_first_translation = zh_text
 
         return MTResult(
             segment_id=asr_result.segment_id,
-            zh_text=final_zh,
+            zh_text=zh_text,
             en_text=en_text,
             is_corrected=is_corrected,
             correction_type=correction_type,

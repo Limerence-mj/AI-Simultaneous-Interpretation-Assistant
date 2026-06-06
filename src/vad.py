@@ -21,12 +21,11 @@ class SpeechSegment:
     duration_ms: float       # 时长，毫秒
 
 
-# ─── 阈值常量 (设计文档 6.2.2) ───
-SILENCE_THRESHOLD_DBFS = -35      # 静音判定 (dBFS)，预留，silero-vad 使用概率阈值
-VAD_THRESHOLD = 0.5               # 语音概率阈值
-MIN_SILENCE_DURATION_MS = 500     # 最小静音时长触发切句
-MIN_SPEECH_DURATION_MS = 300      # 最短语音段（过滤杂音）
-MAX_SPEECH_DURATION_MS = 15000    # 最长单句（强制切断）
+# ─── 阈值常量 ───
+VAD_THRESHOLD = 0.35              # 语音概率阈值
+MIN_SILENCE_DURATION_MS = 200     # 最小静音时长触发切句
+MIN_SPEECH_DURATION_MS = 150      # 最短语音段
+MAX_SPEECH_DURATION_MS = 3000     # 最长单句（3秒安全网）
 SPEECH_PAD_MS = 30                # 语音段前后填充
 SAMPLE_RATE = 16000
 WINDOW_SIZE = 512                 # silero-vad 要求 16kHz 时每块 512 样本
@@ -155,14 +154,43 @@ class VADProcessor:
         return result_segment
 
     def _force_end_segment(self, end_sample: int) -> Optional[SpeechSegment]:
-        """强制结束当前语音段（超过最大长度时调用）"""
+        """强制结束当前语音段，重建 VADIterator 并清理旧缓冲避免重复"""
         if self._current_speech_start is None:
             return None
         segment = self._create_segment(self._current_speech_start, end_sample)
-        self._vad_iter.reset_states()
+        if segment is None:
+            return None
+
+        # 清理已处理的音频缓冲，避免新 VADIterator 重复检测
+        self._trim_before_sample(end_sample)
+
+        # 重建 VADIterator（旧迭代器在强制切断后无法正确检测新语音段）
+        self._vad_iter = VADIterator(
+            self._model,
+            threshold=VAD_THRESHOLD,
+            sampling_rate=self.sample_rate,
+            min_silence_duration_ms=MIN_SILENCE_DURATION_MS,
+            speech_pad_ms=SPEECH_PAD_MS,
+        )
         self._triggered = False
         self._current_speech_start = None
         return segment
+
+    def _trim_before_sample(self, sample_pos: int):
+        """丢弃指定位置之前的音频缓冲数据"""
+        cutoff = sample_pos - self._trimmed_offset
+        if cutoff <= 0:
+            return
+        # 找到需要保留的第一个块
+        kept_chunks = []
+        kept_samples = 0
+        for offset, chunk in self._audio_chunks:
+            chunk_end = offset + len(chunk) - self._trimmed_offset
+            if chunk_end > cutoff:
+                kept_chunks.append((offset, chunk))
+                kept_samples += len(chunk)
+        self._audio_chunks = kept_chunks
+        self._trimmed_offset = sample_pos
 
     def _create_segment(self, start_sample: int, end_sample: int) -> Optional[SpeechSegment]:
         """从音频缓冲区提取语音段"""
