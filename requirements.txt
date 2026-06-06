@@ -23,8 +23,12 @@ pydub>=0.25.0
 # GUI: 图形界面
 PyQt6>=6.5.0
 
-# TTS: 语音合成 (v2.0)
-pyttsx3>=2.90.0
+# TTS: 语音合成
+pyttsx3>=2.90.0         # 系统自带语音（降级备用）
+piper-tts>=1.4.0         # Piper 神经语音合成（高质量离线）
+g2pw>=0.1.0              # Piper 中文注音支持
+unicode-rbnf>=2.0.0       # Piper 中文数字转写
+sherpa-onnx>=1.13.0       # 流式语音识别引擎
 
 # 打包分发
 pyinstaller>=5.13.0
