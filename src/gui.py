@@ -241,36 +241,23 @@ class SubtitleWindow(QWidget):
 
     def _setup_ui(self):
         self.setWindowTitle("AI 同传字幕")
-        self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint|Qt.WindowType.FramelessWindowHint|Qt.WindowType.Tool)
         self.setAttribute(_WA_ShowWithoutActivating, True)
-        # 允许透明背景（去除默认黑底）
         self.setAttribute(_WA_TranslucentBackground, True)
-
         screen = QApplication.primaryScreen().availableGeometry()
-        w, h = 960, 200
-        self.resize(w, h)
-        self.move((screen.width() - w) // 2, screen.height() - h - 100)
-
-        # 标签使用独立样式，不继承窗口背景
-        self._label = QLabel(self.DEFAULT_TEXT)
-        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setWordWrap(True)
-        self._label.setFont(QFont("Microsoft YaHei", self._font_size))
-        self._label.setStyleSheet(
-            "color: #FFFFFF; padding: 16px 20px; background: transparent;"
-        )
-
-        layout = QVBoxLayout()
-        layout.setContentsMargins(20, 10, 20, 10)
-        layout.addWidget(self._label)
-        self.setLayout(layout)
-
+        w, h = 1100, 320; self.resize(w, h)
+        self.move((screen.width()-w)//2, screen.height()-h-100)
+        self._en_label = QLabel("")
+        self._en_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self._en_label.setWordWrap(True)
+        self._en_label.setFont(QFont("Microsoft YaHei", int(self._font_size*0.75)))
+        self._en_label.setStyleSheet("color: rgba(255,220,50,200); padding: 4px 20px; background: transparent;")
+        self._zh_label = QLabel(self.DEFAULT_TEXT)
+        self._zh_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self._zh_label.setWordWrap(True)
+        self._zh_label.setFont(QFont("Microsoft YaHei", self._font_size))
+        self._zh_label.setStyleSheet("color: rgba(255,220,50,255); padding: 4px 20px; background: transparent;")
+        layout = QVBoxLayout(); layout.setContentsMargins(20,10,20,10)
+        layout.addWidget(self._en_label); layout.addWidget(self._zh_label); self.setLayout(layout)
         self._apply_background(self._opacity)
-
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
 
@@ -280,86 +267,68 @@ class SubtitleWindow(QWidget):
         self._timer.start(33)   # 30fps 刷新
 
     def _refresh(self):
-        # 检查是否有新字幕
         if self.state.subtitle_version != self._last_version:
             self._last_version = self.state.subtitle_version
-            text = self.state.current_subtitle
-            # 如果 state 中没有字幕（空字符串），保持默认文字
-            if not text:
-                text = self.DEFAULT_TEXT
-            is_correction = bool(self._last_text and text
-                                and self._last_text != text
-                                and self._last_text != self.DEFAULT_TEXT)
-            self._label.setText(text)
-            self.subtitle_changed.emit(text)
-            self._last_text = text
-            if is_correction:
-                self._flash_correction()
+            zh = self.state.current_subtitle or ""
+            en = self.state.current_en_text or ""
+            if not zh: zh = self.DEFAULT_TEXT
+            is_correction = bool(self._last_text and zh and self._last_text != zh and self._last_text != self.DEFAULT_TEXT)
+            self._en_label.setText(en); self._zh_label.setText(zh)
+            self.subtitle_changed.emit(zh); self._last_text = zh
+            if is_correction: self._flash_correction()
 
     def _flash_correction(self):
-        """修正闪烁效果：短暂变为金色背景"""
         self._apply_background(self._opacity, flash=True)
-        # 800ms 后恢复
-        if self._flash_timer_id is not None:
-            self.killTimer(self._flash_timer_id)
+        if self._flash_timer_id is not None: self.killTimer(self._flash_timer_id)
         self._flash_timer_id = self.startTimer(800)
 
     def timerEvent(self, event):
-        """定时器事件：用于修正闪烁恢复"""
         if self._flash_timer_id is not None and event.timerId() == self._flash_timer_id:
-            self.killTimer(self._flash_timer_id)
-            self._flash_timer_id = None
-            self._apply_background(self._opacity)
-        else:
-            super().timerEvent(event)
+            self.killTimer(self._flash_timer_id); self._flash_timer_id = None
+            self._flash = False; self._update_label_style()
+        else: super().timerEvent(event)
 
     def _apply_background(self, opacity: float, flash: bool = False):
-        """应用背景样式（支持透明度渐变）"""
-        alpha = int(opacity * 255)
-        if flash:
-            color = f"rgba(255, 200, 0, {min(alpha + 40, 255)})"
-        else:
-            color = f"rgba(0, 0, 0, {alpha})"
-        self.setStyleSheet(
-            f"SubtitleWindow {{ background-color: {color}; border-radius: 12px; }}"
-        )
+        self._text_opacity = max(0.1, min(1.0, opacity))
+        self._flash = flash; self._update_label_style()
 
-    def _update_background(self):
-        """兼容旧接口"""
-        self._apply_background(self._opacity)
+    def _update_label_style(self):
+        alpha = int(getattr(self, '_text_opacity', 0.6)*255)
+        flash = getattr(self, '_flash', False)
+        if flash:
+            zh_c = f"rgba(255,240,80,{min(alpha+40,255)})"; en_c = f"rgba(255,240,80,{min(alpha+40,255)})"
+        else:
+            zh_c = f"rgba(255,220,50,{alpha})"; en_c = f"rgba(255,220,50,{alpha})"
+        self._zh_label.setStyleSheet(f"color: {zh_c}; padding: 4px 20px; background: transparent; font-size: {self._font_size}px;")
+        self._en_label.setStyleSheet(f"color: {en_c}; padding: 4px 20px; background: transparent; font-size: {int(self._font_size*0.75)}px;")
+
+    def _update_background(self): self._update_label_style()
 
     def _show_menu(self, pos):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu { background-color: #2c313a; color: #e0e0e0; border: 1px solid #3e4452; }
-            QMenu::item:selected { background-color: #3a6fc5; }
-        """)
-        font_menu = menu.addMenu("字体大小")
-        font_menu.setStyleSheet(menu.styleSheet())
-        for size in [24, 32, 40]:
-            a = QAction(f"{size}px", self)
-            a.triggered.connect(lambda checked, s=size: self.set_font_size(s))
-            font_menu.addAction(a)
-        op_menu = menu.addMenu("透明度")
-        op_menu.setStyleSheet(menu.styleSheet())
-        for op in [0.2, 0.4, 0.6, 0.8]:
-            a = QAction(f"{int(op*100)}%", self)
-            a.triggered.connect(lambda checked, o=op: self.set_opacity(o))
-            op_menu.addAction(a)
-        menu.addSeparator()
-        menu.addAction(QAction("退出", self, triggered=QApplication.quit))
+        menu.setStyleSheet("QMenu { background-color: #2c313a; color: #e0e0e0; border: 1px solid #3e4452; } QMenu::item:selected { background-color: #3a6fc5; }")
+        fm = menu.addMenu("字体大小")
+        for size in [24,32,40]:
+            a = QAction(f"{size}px", self); a.setData(size); a.triggered.connect(self._on_font_action); fm.addAction(a)
+        om = menu.addMenu("透明度")
+        for op in [0.2,0.4,0.6,0.8]:
+            a = QAction(f"{int(op*100)}%", self); a.setData(op); a.triggered.connect(self._on_opacity_action); om.addAction(a)
+        menu.addSeparator(); menu.addAction(QAction("退出", self, triggered=QApplication.quit))
         menu.exec(self.mapToGlobal(pos))
 
+    def _on_font_action(self):
+        s = self.sender().data()
+        if s: self.set_font_size(s)
+    def _on_opacity_action(self):
+        o = self.sender().data()
+        if o: self.set_opacity(o)
+
     def set_font_size(self, size: int):
-        self._font_size = size
-        self._label.setFont(QFont("Microsoft YaHei", size))
-
+        self._font_size = size; self._update_label_style()
     def set_opacity(self, opacity: float):
-        self._opacity = max(0.1, min(1.0, opacity))
-        self._apply_background(self._opacity)
-
+        self._opacity = max(0.1, min(1.0, opacity)); self._apply_background(self._opacity)
     def set_subtitle_direct(self, text: str):
-        self._label.setText(text)
+        self._zh_label.setText(text)
 
     # ─── 鼠标拖拽（兼容 PyQt5/PyQt6） ───
 
@@ -486,40 +455,26 @@ class PipelineInitWorker(QThread):
     progress_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, use_tts: bool = False, tts_voice: str = "晓雅 (女声)",
-                 tts_speed: float = 1.0,
-                 on_subtitle: Callable = None, on_tts: Callable = None):
+    def __init__(self, on_subtitle: Callable = None):
         super().__init__()
-        self._use_tts = use_tts
-        self._tts_voice = tts_voice
-        self._tts_speed = tts_speed
         self._on_subtitle_cb = on_subtitle
-        self._on_tts_cb = on_tts
         self.pipeline = None
         self.coordinator = None
-        self.tts_engine = None
 
     def run(self):
         try:
             from src.pipeline import Pipeline
             from src.translator_coordinator import TranslationCoordinator
-
             self.progress_signal.emit("正在加载语音识别模型 (Whisper)...")
-            self.pipeline = Pipeline(
-                model_size="tiny", device="cpu",
-                on_result=self._on_subtitle_cb,
-            )
+            self.pipeline = Pipeline(model_size="tiny", device="cpu",
+                                     on_result=self._on_subtitle_cb)
             self.pipeline.start()
-
             self.progress_signal.emit("正在加载翻译模型 (opus-mt)...")
             self.coordinator = TranslationCoordinator()
             self.coordinator.initialize()
-
-            # TTS 加载移到主线程（避免 QThread 中的兼容问题）
             self.finished_signal.emit(True, "")
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            import traceback; traceback.print_exc()
             self.finished_signal.emit(False, str(e))
 
 
@@ -668,107 +623,28 @@ class MainWindow(QMainWindow):
         tab2_layout.setSpacing(16)
         tab2_layout.setContentsMargins(24, 24, 24, 24)
 
-        # ── 翻译引擎模式 ──
-        engine_label = QLabel("翻译引擎")
-        engine_label.setStyleSheet("font-size: 14px; color: #888;")
-        tab2_layout.addWidget(engine_label)
-        engine_row = QHBoxLayout()
-        self._engine_mode_combo = QComboBox()
-        self._engine_mode_combo.addItems(["本地离线", "Groq API"])
-        self._engine_mode_combo.currentTextChanged.connect(self._on_engine_mode_changed)
-        engine_row.addWidget(self._engine_mode_combo, 1)
-        tab2_layout.addLayout(engine_row)
-
-        # API Key
-        api_label = QLabel("Groq API Key")
-        api_label.setStyleSheet("font-size: 14px; color: #888;")
-        tab2_layout.addWidget(api_label)
-        api_row = QHBoxLayout()
-        from PyQt5.QtWidgets import QLineEdit
-        try:
-            from PyQt6.QtWidgets import QLineEdit
-        except ImportError:
-            pass
-        self._api_key_input = QLineEdit()
-        self._api_key_input.setPlaceholderText("输入 Groq API Key (gsk_... )")
-        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_input.setStyleSheet(
-            "background-color: #2c313a; color: #e0e0e0; border: 1px solid #3e4452;"
-            "border-radius: 8px; padding: 10px 16px; font-size: 14px;"
-        )
-        self._api_key_input.setEnabled(False)
-        api_row.addWidget(self._api_key_input, 1)
-        tab2_layout.addLayout(api_row)
-
-        sep0 = QLabel()
-        sep0.setFixedHeight(1)
-        sep0.setStyleSheet("background: #333842;")
-        tab2_layout.addWidget(sep0)
-
-        # 字幕字体
-        font_label = QLabel("字幕字体大小")
-        font_label.setStyleSheet("font-size: 14px; color: #888;")
+        # ── 字幕字体 ──
+        font_label = QLabel("字幕字体大小"); font_label.setStyleSheet("font-size: 14px; color: #888;")
         tab2_layout.addWidget(font_label)
-        self._font_combo = QComboBox()
-        self._font_combo.addItems(["24px", "32px", "40px"])
-        self._font_combo.setCurrentIndex(1)
+        self._font_combo = QComboBox(); self._font_combo.addItems(["24px","32px","40px"]); self._font_combo.setCurrentIndex(1)
+        self._font_combo.currentIndexChanged.connect(self._on_font_combo_changed)
         tab2_layout.addWidget(self._font_combo)
 
-        # 透明度
-        op_label = QLabel("字幕透明度")
-        op_label.setStyleSheet("font-size: 14px; color: #888;")
+        # ── 透明度 ──
+        op_label = QLabel("字幕透明度"); op_label.setStyleSheet("font-size: 14px; color: #888;")
         tab2_layout.addWidget(op_label)
         op_row = QHBoxLayout()
-        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self._opacity_slider.setRange(20, 80)
-        self._opacity_slider.setValue(60)
-        self._opacity_label = QLabel("60%")
-        self._opacity_label.setStyleSheet("font-size: 16px; font-weight: bold; min-width: 40px;")
-        self._opacity_slider.valueChanged.connect(
-            lambda v: self._opacity_label.setText(f"{v}%")
-        )
-        op_row.addWidget(self._opacity_slider, 1)
-        op_row.addWidget(self._opacity_label)
+        self._opacity_slider = QSlider(Qt.Orientation.Horizontal); self._opacity_slider.setRange(20,80); self._opacity_slider.setValue(60)
+        self._opacity_label = QLabel("60%"); self._opacity_label.setStyleSheet("font-size: 16px; font-weight: bold; min-width: 40px;")
+        self._opacity_slider.valueChanged.connect(self._on_opacity_slider_changed)
+        op_row.addWidget(self._opacity_slider,1); op_row.addWidget(self._opacity_label)
         tab2_layout.addLayout(op_row)
 
-        # 修正
-        sep2 = QLabel()
-        sep2.setFixedHeight(1)
-        sep2.setStyleSheet("background: #333842;")
+        # ── 修正 ──
+        sep2 = QLabel(); sep2.setFixedHeight(1); sep2.setStyleSheet("background: #333842;")
         tab2_layout.addWidget(sep2)
-
-        self._auto_correct_cb = QCheckBox("启用自动修正")
-        self._auto_correct_cb.setChecked(True)
+        self._auto_correct_cb = QCheckBox("启用自动修正"); self._auto_correct_cb.setChecked(True)
         tab2_layout.addWidget(self._auto_correct_cb)
-
-        # TTS 语音播报
-        tts_title = QLabel("语音播报 (TTS)")
-        tts_title.setStyleSheet("font-size: 14px; color: #888;")
-        tab2_layout.addWidget(tts_title)
-
-        tts_row = QHBoxLayout()
-        self._tts_cb = QCheckBox("启用语音播报")
-        self._tts_cb.setChecked(True)  # 默认开启
-        self._tts_cb.toggled.connect(self._on_tts_toggled)
-        tts_row.addWidget(self._tts_cb)
-        tts_row.addSpacing(16)
-        self._tts_voice_combo = QComboBox()
-        self._tts_voice_combo.setEnabled(False)
-        self._tts_voice_combo.setMinimumWidth(140)
-        tts_row.addWidget(self._tts_voice_combo)
-        tts_row.addSpacing(10)
-        self._tts_speed_combo = QComboBox()
-        self._tts_speed_combo.addItems(["0.8x", "1.0x", "1.2x", "1.5x"])
-        self._tts_speed_combo.setCurrentIndex(1)
-        self._tts_speed_combo.setEnabled(False)
-        self._tts_speed_combo.setFixedWidth(80)
-        tts_row.addWidget(self._tts_speed_combo)
-        tts_row.addStretch()
-        tab2_layout.addLayout(tts_row)
-
-        # 填充 TTS 音色列表
-        self._refresh_tts_voices()
-
         tab2_layout.addStretch()
         scroll2.setWidget(tab2)
         tabs.addTab(scroll2, "设置")
@@ -837,95 +713,13 @@ class MainWindow(QMainWindow):
         """启动翻译管道"""
         from src.audio_capture import AudioCapture
 
-        use_api = (self._engine_mode_combo.currentText() == "Groq API")
-        api_key = self._api_key_input.text().strip() if use_api else ""
-
-        if use_api and not api_key:
-            QMessageBox.warning(self, "缺少 API Key", "请先在设置页输入 Groq API Key")
-            return
-
-        use_tts = self._tts_cb.isChecked()
-        speeds = [0.8, 1.0, 1.2, 1.5]
-        tts_speed = speeds[self._tts_speed_combo.currentIndex()]
-        tts_voice = self._tts_voice_combo.currentData() or "晓雅 (女声)"
-
-        self._start_btn.setEnabled(False)
-        self._stop_btn.setEnabled(False)
-
-        if use_api:
-            # Groq API 模式：无需加载模型，直接启动
-            self._status_indicator.setText("🟡  启动 Groq API...")
-            self._status_indicator.setStyleSheet(
-                "font-size: 18px; font-weight: bold; color: #facc15; background: transparent; padding-top: 8px;"
-            )
-            self._start_api_pipeline(api_key, use_tts, tts_voice, tts_speed)
-        else:
-            # 本地离线模式：后台加载模型
-            self._status_indicator.setText("🟡  正在加载模型...")
-            self._status_indicator.setStyleSheet(
-                "font-size: 18px; font-weight: bold; color: #facc15; background: transparent; padding-top: 8px;"
-            )
-            self._init_thread = PipelineInitWorker(
-                use_tts=use_tts, tts_voice=tts_voice, tts_speed=tts_speed,
-                on_subtitle=self._on_subtitle_update,
-            )
-            self._init_thread.progress_signal.connect(self._on_init_progress)
-            self._init_thread.finished_signal.connect(self._on_init_finished)
-            self._init_thread.start()
-
-    def _start_api_pipeline(self, api_key, use_tts, tts_voice, tts_speed):
-        """直接启动 Groq API 管线（无需后台加载）"""
-        from src.pipeline_api import APIPipeline
-        from src.audio_capture import AudioCapture
-
-        try:
-            self._pipeline = APIPipeline(
-                api_key=api_key,
-                on_subtitle=self._on_subtitle_update,
-            )
-            self._pipeline.start()
-
-            # TTS
-            if use_tts:
-                try:
-                    from src.tts_engine_edge import EdgeTTSEngine
-                    self._tts_engine = EdgeTTSEngine(voice=tts_voice, speed=tts_speed)
-                    self._tts_engine.start()
-                    logger.info("TTS 已就绪 (Edge-TTS)")
-                except Exception as e:
-                    logger.warning(f"TTS 加载失败: {e}")
-                    self._tts_engine = None
-            else:
-                self._tts_engine = None
-
-            # 音频捕获
-            self._audio_capture = AudioCapture()
-            device_id = self._device_combo.currentData()
-            if device_id is None:
-                devices = AudioCapture.list_devices()
-                loopback_devs = [d for d in devices if d.device_type == "loopback"]
-                device_id = loopback_devs[0].id if loopback_devs else devices[0].id if devices else -1
-            self._audio_capture.start(device_id, self._on_audio_chunk)
-
-            self._running = True
-            self._start_time = time.time()
-            self._start_btn.setEnabled(False)
-            self._stop_btn.setEnabled(True)
-            self._status_indicator.setText("🟢  运行中 (Groq API)")
-            self._status_indicator.setStyleSheet(
-                "font-size: 18px; font-weight: bold; color: #4ade80; background: transparent; padding-top: 8px;"
-            )
-            self.state.set_status(AppStatus.RUNNING)
-
-            self._stats_timer = QTimer()
-            self._stats_timer.timeout.connect(self._update_stats)
-            self._stats_timer.start(1000)
-
-            logger.info("Groq API 翻译管道已启动")
-        except Exception as e:
-            logger.error(f"API 启动失败: {e}")
-            QMessageBox.critical(self, "启动失败", str(e))
-            self._start_btn.setEnabled(True)
+        self._start_btn.setEnabled(False); self._stop_btn.setEnabled(False)
+        self._status_indicator.setText("🟡  正在加载模型...")
+        self._status_indicator.setStyleSheet("font-size: 18px; font-weight: bold; color: #facc15; background: transparent; padding-top: 8px;")
+        self._init_thread = PipelineInitWorker(on_subtitle=self._on_subtitle_update)
+        self._init_thread.progress_signal.connect(self._on_init_progress)
+        self._init_thread.finished_signal.connect(self._on_init_finished)
+        self._init_thread.start()
 
     def _on_init_progress(self, msg: str):
         """后台线程进度回调"""
@@ -945,44 +739,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "启动失败", error_msg)
             return
 
-        # 获取加载好的实例
         self._pipeline = self._init_thread.pipeline
         self._coordinator = self._init_thread.coordinator
-        self._tts_engine = self._init_thread.tts_engine
+        self._tts_engine = None  # TTS 扩展接口暂不启用
         self._init_thread = None
-
-        # 加载 TTS（主线程，Edge-TTS 在线高质量语音）
-        if self._tts_cb.isChecked():
-            logger.info("正在加载语音播报引擎...")
-            speeds = [0.8, 1.0, 1.2, 1.5]
-            tts_speed = speeds[self._tts_speed_combo.currentIndex()]
-            tts_voice = self._tts_voice_combo.currentData() or "晓晓 (女声)"
-            try:
-                from src.tts_engine_edge import EdgeTTSEngine
-                self._tts_engine = EdgeTTSEngine(voice=tts_voice, speed=tts_speed)
-                self._tts_engine.start()
-                self._coordinator.set_tts(self._tts_engine)
-                logger.info(f"TTS 已就绪 (Edge-TTS, {tts_voice})")
-            except Exception as e:
-                logger.warning(f"Edge-TTS 加载失败: {e}, 降级 pyttsx3")
-                try:
-                    from src.tts_engine import TTSEngine
-                    self._tts_engine = TTSEngine(speed=tts_speed)
-                    if self._tts_engine.is_available:
-                        self._tts_engine.start()
-                        self._coordinator.set_tts(self._tts_engine)
-                        logger.info("TTS 已就绪 (pyttsx3 降级)")
-                    else:
-                        self._tts_engine = None
-                except Exception:
-                    self._tts_engine = None
-        else:
-            logger.info("未启用 TTS 语音播报")
-
-        # 发出就绪提示音
-        if self._tts_engine and self._tts_engine.is_available:
-            self._tts_engine.speak("翻译助手已就绪")
-
         # 启动音频捕获
         from src.audio_capture import AudioCapture
         try:
@@ -1033,20 +793,16 @@ class MainWindow(QMainWindow):
 
         logger.info("翻译管道已启动")
 
-    def _refresh_tts_voices(self):
-        """刷新可用的 TTS 音色列表"""
-        self._tts_voice_combo.clear()
-        from src.tts_engine_edge import VOICE_OPTIONS
-        for name in VOICE_OPTIONS:
-            self._tts_voice_combo.addItem(f"🎵 {name}", name)
+    def _on_font_combo_changed(self, idx):
+        sizes = [24, 32, 40]
+        if 0 <= idx < len(sizes):
+            w = getattr(self, '_subtitle_window', None)
+            if w is not None: w.set_font_size(sizes[idx])
 
-    def _on_tts_toggled(self, checked):
-        """TTS 开关切换"""
-        self._tts_voice_combo.setEnabled(checked)
-        self._tts_speed_combo.setEnabled(checked)
-        if not checked and self._tts_engine:
-            self._tts_engine.stop()
-            self._tts_engine = None
+    def _on_opacity_slider_changed(self, value):
+        self._opacity_label.setText(f"{value}%")
+        w = getattr(self, '_subtitle_window', None)
+        if w is not None: w.set_opacity(value / 100.0)
 
     def _stop_pipeline(self):
         """停止翻译管道"""
@@ -1064,13 +820,6 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self._audio_capture = None
-
-        if self._tts_engine:
-            try:
-                self._tts_engine.stop()
-            except Exception:
-                pass
-            self._tts_engine = None
 
         if self._pipeline:
             try:
@@ -1115,11 +864,8 @@ class MainWindow(QMainWindow):
         """字幕回调（兼容 API 模式字符串 和 本地模式 ASRResult）"""
         if not self._running:
             return
-        # API 模式：直接收到中文字符串
         if isinstance(result, str):
             self.state.set_subtitle(result)
-            if self._tts_engine and self._tts_engine.is_available and len(result) > 2:
-                self._tts_engine.speak(result)
             return
         # 本地模式：收到 ASRResult
         if self._coordinator is None:
@@ -1172,8 +918,10 @@ class MainWindow(QMainWindow):
     def _toggle_subtitle(self):
         if not hasattr(self, '_subtitle_window') or self._subtitle_window is None:
             self._subtitle_window = SubtitleWindow()
-            self._subtitle_window.show()
-            self._subtitle_btn.setText("📺 隐藏")
+            sizes = [24, 32, 40]; idx = self._font_combo.currentIndex()
+            if 0 <= idx < len(sizes): self._subtitle_window.set_font_size(sizes[idx])
+            self._subtitle_window.set_opacity(self._opacity_slider.value() / 100.0)
+            self._subtitle_window.show(); self._subtitle_btn.setText("📺 隐藏")
         else:
             if self._subtitle_window.isVisible():
                 self._subtitle_window.hide()
@@ -1230,25 +978,12 @@ class MainWindow(QMainWindow):
 
     # ─── 配置 ───
 
-    def _on_engine_mode_changed(self, mode: str):
-        """引擎模式切换"""
-        use_api = (mode == "Groq API")
-        self._api_key_input.setEnabled(use_api)
-
     def _load_config(self):
         cfg = self.config_mgr.data
         font_map = {24: 0, 32: 1, 40: 2}
         self._font_combo.setCurrentIndex(font_map.get(cfg.get("font_size", 24), 1))
         self._opacity_slider.setValue(int(cfg.get("opacity", 0.6) * 100))
         self._auto_correct_cb.setChecked(cfg.get("auto_correct", True))
-        # API 配置
-        engine_mode = cfg.get("engine_mode", "本地离线")
-        idx = self._engine_mode_combo.findText(engine_mode)
-        if idx >= 0:
-            self._engine_mode_combo.setCurrentIndex(idx)
-        api_key = cfg.get("groq_api_key", "")
-        if api_key:
-            self._api_key_input.setText(api_key)
 
     def _save_config(self):
         font_sizes = [24, 32, 40]
@@ -1257,7 +992,5 @@ class MainWindow(QMainWindow):
             "opacity": self._opacity_slider.value() / 100.0,
             "auto_correct": self._auto_correct_cb.isChecked(),
             "audio_source": "system" if "系统" in self._audio_source_combo.currentText() else "microphone",
-            "engine_mode": self._engine_mode_combo.currentText(),
-            "groq_api_key": self._api_key_input.text(),
         })
         self.config_mgr.save()

@@ -144,12 +144,13 @@ class ASREngine:
             audio_f32,
             language="en",
             beam_size=self.beam_size,
-            vad_filter=False,          # 我们自己做了 VAD
-            condition_on_previous_text=False,  # 每句独立识别，避免跨句幻觉传播
-            temperature=0.0,           # 确定性输出
-            compression_ratio_threshold=2.4,  # 检测音频压缩失真（gzip 压缩比阈值）
-            log_prob_threshold=-1.0,   # 过滤低置信度输出
-            no_speech_threshold=0.6,   # 检测非语音段
+            best_of=1,
+            vad_filter=False,
+            condition_on_previous_text=False,
+            temperature=0.0,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.6,
         )
 
         # 合并所有片段文本

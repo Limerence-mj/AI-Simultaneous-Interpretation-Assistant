@@ -128,43 +128,18 @@ class MTEngine:
 
     @staticmethod
     def _collapse_repetitions(text: str) -> str:
-        """
-        折叠重复的中文词/短语/字符
-        如 "你好 你好 你好" → "你好"
-            "嗨 嗨嗨 嗨" → "嗨"
-            "是 是" → "是"
-        """
-        if not text:
-            return text
-
+        """折叠重复词/短语，防止模型产出循环文本"""
+        if not text: return text
         words = text.split()
-        if not words:
-            return text
-
-        # 词级去重：相邻相同词折叠
-        collapsed = [words[0]]
-        for w in words[1:]:
-            if w != collapsed[-1]:
-                # 也检查是否为子串重复（如 "嗨嗨" vs "嗨"）
-                if w in collapsed[-1] or collapsed[-1] in w:
-                    collapsed[-1] = max(w, collapsed[-1], key=len)
-                else:
-                    collapsed.append(w)
-
-        # 字符级去重：忽略空格，仅比较 CJK 字符
+        if not words: return text
+        seen = set(); collapsed = []
+        for w in words:
+            if w not in seen or len(w) > 2: collapsed.append(w); seen.add(w)
+        if len(collapsed) < len(words) * 0.4:
+            collapsed = words[:len(words)//2]
         result = " ".join(collapsed)
-        chars = list(result)
-        deduped = []
-        last_cjk = None  # 上一个 CJK 字符
-
+        chars, deduped = list(result), []
         for c in chars:
-            is_cjk = '一' <= c <= '鿿' or '぀' <= c <= 'ヿ' or '가' <= c <= '힯'
-            if is_cjk:
-                if c == last_cjk:
-                    continue  # 跳过连续重复的 CJK 字符
-                last_cjk = c
-            else:
-                last_cjk = None  # 非 CJK 字符重置
+            if deduped and deduped[-1] == c and ('一' <= c <= '鿿'): continue
             deduped.append(c)
-
         return "".join(deduped)

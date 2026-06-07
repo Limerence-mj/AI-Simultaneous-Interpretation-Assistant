@@ -102,13 +102,19 @@ class StateManager:
             return self._current_subtitle
 
     @property
+    def current_en_text(self) -> str:
+        with self._data_lock:
+            return self._current_en_text
+
+    @property
     def subtitle_version(self) -> int:
         return self._subtitle_version
 
-    def set_subtitle(self, text: str):
-        """更新当前字幕文本"""
+    def set_subtitle(self, zh_text: str, en_text: str = ""):
+        """更新当前字幕（中英双语）"""
         with self._data_lock:
-            self._current_subtitle = text
+            self._current_subtitle = zh_text
+            self._current_en_text = en_text
             self._subtitle_version += 1
 
     # ─── 状态 ───

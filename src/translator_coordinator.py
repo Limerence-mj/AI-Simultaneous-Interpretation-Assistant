@@ -150,8 +150,8 @@ class TranslationCoordinator:
             )
             self.state.add_record(record)
 
-        # 更新当前字幕
-        self.state.set_subtitle(zh_text)
+        # 更新当前字幕（中英双语）
+        self.state.set_subtitle(zh_text, en_text)
 
         # TTS 语音播报
         if self._tts and self._tts.is_available and zh_text:
